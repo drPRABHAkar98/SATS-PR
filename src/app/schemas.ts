@@ -2,7 +2,7 @@ import * as z from "zod";
 
 export const groupSchema = z.object({
   name: z.string().min(1, "Name is required."),
-  mean: z.coerce.number({ invalid_type_error: "Must be a number." }).positive("Must be positive."),
+  mean: z.coerce.number({ invalid_type_error: "Must be a number." }),
   sd: z.coerce.number({ invalid_type_error: "Must be a number." }).nonnegative("Cannot be negative."),
   samples: z.coerce
     .number({ invalid_type_error: "Must be a number." })

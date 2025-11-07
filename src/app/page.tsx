@@ -4,7 +4,7 @@ import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm } from "react-hook-form";
 import * as z from "zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import {
   FlaskConical,
@@ -62,8 +62,9 @@ import { useToast } from "@/hooks/use-toast";
 import type { AnalysisResult, StatisticalTestResult } from "./actions";
 import { runAnalysis, performStatisticalTest } from "./actions";
 import { formSchema } from "./schemas";
-import type { StatisticalTestInput } from "@/ai/flows/statistical-analysis.schemas";
 import type { StatisticalTest } from "./schemas";
+import { calculateLinearRegression } from "@/lib/analysis";
+import type { StatisticalTestInput } from "@/ai/flows/statistical-analysis.schemas";
 
 
 // Helper function to calculate standard deviation
@@ -82,6 +83,13 @@ export type TestResultState = {
   }
 }
 
+type StandardCurveInfo = {
+    m: number;
+    c: number;
+    rSquare: number;
+} | null;
+
+
 export default function Home() {
   const { toast } = useToast();
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
@@ -89,6 +97,7 @@ export default function Home() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [testResults, setTestResults] = useState<TestResultState>({});
+  const [standardCurveInfo, setStandardCurveInfo] = useState<StandardCurveInfo>(null);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -147,6 +156,26 @@ export default function Home() {
     name: "statisticalTests",
   });
 
+  const watchedStandardCurve = form.watch('standardCurve');
+  
+  const updateCurveInfo = (data: {concentration: number, absorbance: number}[]) => {
+      const points = data.map(p => ({ x: p.concentration, y: p.absorbance }));
+      if (points.length >= 2) {
+          const regression = calculateLinearRegression(points);
+          if (!isNaN(regression.m) && !isNaN(regression.c)) {
+              setStandardCurveInfo(regression);
+          } else {
+              setStandardCurveInfo(null);
+          }
+      } else {
+          setStandardCurveInfo(null);
+      }
+  }
+
+  useEffect(() => {
+      updateCurveInfo(watchedStandardCurve);
+  }, [watchedStandardCurve]);
+
 
   function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
@@ -184,6 +213,8 @@ export default function Home() {
     }
     
     const slope = (lastAbsorbance - firstAbsorbance) / (lastPoint.concentration - firstPoint.concentration);
+    
+    const updatedPoints = [...points];
 
     for (let i = 1; i < points.length - 1; i++) {
         const point = points[i];
@@ -193,8 +224,12 @@ export default function Home() {
         if(isNaN(concentration) || isNaN(firstConc)) continue;
 
         const absorbance = firstAbsorbance + slope * (concentration - firstConc);
-        updateStandardPoint(i, { ...point, absorbance: parseFloat(absorbance.toFixed(4)) });
+        const updatedPoint = { ...point, absorbance: parseFloat(absorbance.toFixed(4)) };
+        updateStandardPoint(i, updatedPoint);
+        updatedPoints[i] = updatedPoint;
     }
+    
+    updateCurveInfo(updatedPoints);
 
     toast({
         title: "Auto-fill Complete",
@@ -869,6 +904,25 @@ export default function Home() {
                         <Wand2 className="mr-2 h-4 w-4" /> Auto-fill Absorbance
                       </Button>
                     </div>
+                    {standardCurveInfo && (
+                        <div className="mt-4 space-y-2 rounded-lg border bg-muted/50 p-4">
+                            <h4 className="font-headline text-md font-semibold">
+                                Curve Details
+                            </h4>
+                            <p className="text-sm font-medium">
+                                Equation:{" "}
+                                <span className="font-mono text-primary">{`y = ${standardCurveInfo.m.toFixed(
+                                4
+                                )}x + ${standardCurveInfo.c.toFixed(4)}`}</span>
+                            </p>
+                            <p className="text-sm font-medium">
+                                R² Value:{" "}
+                                <span className="font-mono text-primary">
+                                {standardCurveInfo.rSquare.toFixed(4)}
+                                </span>
+                            </p>
+                        </div>
+                    )}
                   </CardContent>
                 </Card>
 
