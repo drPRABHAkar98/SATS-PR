@@ -751,6 +751,7 @@ export default function Home() {
                                   <SelectContent>
                                     <SelectItem value="0.05">&lt; 0.05</SelectItem>
                                     <SelectItem value="0.01">&lt; 0.01</SelectItem>
+                                    <SelectItem value="0.001">&lt; 0.001</SelectItem>
                                   </SelectContent>
                                 </Select>
                                 <FormMessage />
