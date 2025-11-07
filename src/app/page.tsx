@@ -182,7 +182,10 @@ export default function Home() {
 
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
-    const targetR2 = form.getValues("targetR2");
+    const targetR2Value = form.getValues("targetR2");
+    // Ensure targetR2 is either a number or undefined, not an empty string or other falsy values.
+    const targetR2 = targetR2Value === "" || targetR2Value === null ? undefined : Number(targetR2Value);
+
 
     if (points.length < 2) {
       toast({
@@ -198,9 +201,11 @@ export default function Home() {
         const adjustedPoints = await adjustRsquared(points, targetR2);
         replaceStandardCurve(adjustedPoints);
         updateCurveInfo(adjustedPoints);
+        const finalRegression = calculateLinearRegression(adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance})));
+
         toast({
             title: "Auto-fill Complete",
-            description: `Absorbance values adjusted to achieve target R².`,
+            description: `Absorbance values adjusted. New R² is ${finalRegression.rSquare.toFixed(4)}.`,
         });
 
     } catch (error) {
@@ -816,6 +821,28 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <FormField
+                        control={form.control}
+                        name="targetR2"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Target R² (Optional)</FormLabel>
+                            <FormControl>
+                                <Input
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                max="1"
+                                placeholder="e.g., 0.995. Leave blank for perfect R²."
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                value={field.value === undefined ? '' : field.value}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
                     <div className="max-h-60 space-y-2 overflow-y-auto pr-2">
                       {standardCurveFields.map((field, index) => (
                         <div
@@ -861,28 +888,6 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
-                    {standardCurveFields.length >= 2 && (
-                         <FormField
-                            control={form.control}
-                            name="targetR2"
-                            render={({ field }) => (
-                                <FormItem>
-                                <FormLabel>Target R² (Optional)</FormLabel>
-                                <FormControl>
-                                    <Input
-                                    type="number"
-                                    step="0.001"
-                                    min="0"
-                                    max="1"
-                                    placeholder="e.g., 0.995"
-                                    {...field}
-                                    />
-                                </FormControl>
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                            />
-                    )}
                      <div className="flex flex-col gap-2 sm:flex-row">
                       <Button
                         type="button"

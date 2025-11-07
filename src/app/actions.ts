@@ -23,6 +23,9 @@ export type AnalysisResult = {
 };
 
 export async function adjustRsquared(points: StandardPoint[], targetR2?: number): Promise<StandardPoint[]> {
+    if (points.length < 3) {
+      throw new Error("You need at least three points to adjust for a target R².");
+    }
     const firstPoint = points[0];
     const lastPoint = points[points.length - 1];
 
@@ -37,76 +40,53 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
        throw new Error("First and last absorbance values must be numbers.");
     }
 
-    if (targetR2 && (targetR2 > 1 || targetR2 < 0)) {
+    if (targetR2 !== undefined && (targetR2 > 1 || targetR2 < 0)) {
         throw new Error("Target R² must be between 0 and 1.");
     }
 
     const slope = (lastAbsorbance - firstAbsorbance) / (lastPoint.concentration - firstPoint.concentration);
+    
+    // Create a deep copy to avoid modifying the original points array directly
     let updatedPoints = points.map(p => ({...p}));
 
-    if (!targetR2) {
+    if (!targetR2) { // If no target R2, create a perfect line
         updatedPoints = updatedPoints.map(point => {
             const absorbance = firstAbsorbance + slope * (point.concentration - firstPoint.concentration);
             return { ...point, absorbance: parseFloat(absorbance.toFixed(4)) };
         });
-    } else {
+    } else { // If there is a target R2, adjust the middle points
         const concentrations = updatedPoints.map(p => p.concentration);
         const linearAbsorbances = updatedPoints.map(p => firstAbsorbance + slope * (p.concentration - firstPoint.concentration));
+        
+        // Calculate Sum of Squares Total (SST) based on the perfect linear fit
         const yMean = linearAbsorbances.reduce((s, v) => s + v, 0) / linearAbsorbances.length;
         const totalSumOfSquaresSST = linearAbsorbances.reduce((s, v) => s + (v - yMean) ** 2, 0);
+
+        // Calculate the required Sum of Squared Errors (SSE) for the target R²
         const targetSSE = totalSumOfSquaresSST * (1 - targetR2);
 
         if (targetSSE < 0) {
             throw new Error("Cannot achieve target R² as it is too high for this data.");
         }
-
-        let currentSSE = 0;
-        let scaleFactor = 1;
         
-        for (let iter = 0; iter < 50; iter++) {
-            const tempPoints = updatedPoints.map(p => ({...p}));
-            
-            for (let i = 1; i < tempPoints.length - 1; i++) {
-                const linearY = linearAbsorbances[i];
-                const noise = (Math.sin(i * concentrations[i]) * 0.5); 
-                const absorbanceRange = Math.abs(lastAbsorbance - firstAbsorbance);
-                const error = noise * absorbanceRange * 0.1 * scaleFactor;
-                tempPoints[i].absorbance = Math.max(0, linearY + error);
-            }
-            
-            const currentRegression = calculateLinearRegression(tempPoints.map(p => ({x: p.concentration, y:p.absorbance})));
-            const fittedValues = tempPoints.map(p => currentRegression.m * p.concentration + currentRegression.c);
-            currentSSE = tempPoints.reduce((sum, p, i) => sum + (p.absorbance - fittedValues[i])**2, 0);
-
-            if (Math.abs(currentSSE - targetSSE) < 1e-6) {
-                 break; 
-            }
-            
-            if(currentSSE > 0) {
-                 scaleFactor *= Math.sqrt(targetSSE / currentSSE);
-            } else {
-                 scaleFactor = 1;
-            }
+        const numMiddlePoints = updatedPoints.length - 2;
+        if (numMiddlePoints <= 0) {
+            throw new Error("Not enough middle points to adjust for R².");
         }
+
+        // Distribute the error among the middle points
+        const errorPerPoint = Math.sqrt(targetSSE / numMiddlePoints);
         
         for (let i = 1; i < updatedPoints.length - 1; i++) {
-            const linearY = linearAbsorbances[i];
-            const noise = (Math.sin(i * concentrations[i]) * 0.5);
-            const absorbanceRange = Math.abs(lastAbsorbance - firstAbsorbance);
-            const error = noise * absorbanceRange * 0.1 * scaleFactor;
-            updatedPoints[i].absorbance = parseFloat(Math.max(0, linearY + error).toFixed(4));
+            // Apply alternating noise to keep the regression line relatively stable
+            const noise = (i % 2 === 0 ? 1 : -1) * errorPerPoint * (Math.random() * 0.4 + 0.8); // Add some randomness
+            const newAbsorbance = linearAbsorbances[i] + noise;
+            updatedPoints[i].absorbance = parseFloat(Math.max(0, newAbsorbance).toFixed(4));
         }
     }
     
-    // Return only the updated points, not all of them
-    const finalPoints = points.map((p, i) => {
-        if (i > 0 && i < points.length - 1) {
-            return updatedPoints[i];
-        }
-        return p;
-    });
-
-    return finalPoints;
+    // Return the full list of updated points
+    return updatedPoints;
 }
 
 export async function runAnalysis(
