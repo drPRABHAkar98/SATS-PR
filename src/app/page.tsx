@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -65,6 +66,7 @@ import { formSchema } from "./schemas";
 import type { StatisticalTest, StandardPoint } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
 import type { StatisticalTestInput } from "@/ai/flows/statistical-analysis.schemas";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 // Helper function to calculate standard deviation
@@ -279,7 +281,7 @@ export default function Home() {
         group2: {
           name: group2Data.name,
           mean: Number(group2Data.mean),
-          sd: Number(group2Data.sd),
+          sd: Number(group2Data.samples),
           samples: Number(group2Data.samples),
         },
         test: test,
@@ -530,80 +532,93 @@ export default function Home() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {groupFields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="grid grid-cols-1 gap-4 rounded-lg border p-4 md:grid-cols-[1fr_auto]"
-                      >
-                        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                          <FormField
-                            control={form.control}
-                            name={`groups.${index}.name`}
-                            render={({ field }) => (
-                              <FormItem className="col-span-2">
-                                <FormLabel>Group Name</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="e.g., Control" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`groups.${index}.mean`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Mean Conc.</FormLabel>
-                                <FormControl>
-                                  <Input type="number" step="any" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`groups.${index}.sd`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>SD</FormLabel>
-                                <FormControl>
-                                  <Input type="number" step="any" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`groups.${index}.samples`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Samples (n)</FormLabel>
-                                <FormControl>
-                                  <Input type="number" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="flex items-end">
-                           <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeGroup(index)}
-                            disabled={groupFields.length <= 1}
-                            aria-label="Remove group"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                  <CardContent className="space-y-2">
+                    <Accordion type="multiple" className="w-full">
+                      {groupFields.map((field, index) => {
+                        const groupName = form.watch(`groups.${index}.name`);
+                        return (
+                          <AccordionItem value={`item-${index}`} key={field.id}>
+                            <AccordionTrigger>
+                              <div className="flex w-full items-center justify-between pr-4">
+                                <span>Group: {groupName || `(Group ${index + 1})`}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // prevent accordion from toggling
+                                    removeGroup(index);
+                                  }}
+                                  disabled={groupFields.length <= 1}
+                                  aria-label="Remove group"
+                                  className="h-8 w-8"
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="p-4">
+                              <div className="grid grid-cols-1 gap-4">
+                                <FormField
+                                  control={form.control}
+                                  name={`groups.${index}.name`}
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Group Name</FormLabel>
+                                      <FormControl>
+                                        <Input placeholder="e.g., Control" {...field} />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <div className="grid grid-cols-3 gap-4">
+                                  <FormField
+                                    control={form.control}
+                                    name={`groups.${index}.mean`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Mean Conc.</FormLabel>
+                                        <FormControl>
+                                          <Input type="number" step="any" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={form.control}
+                                    name={`groups.${index}.sd`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>SD</FormLabel>
+                                        <FormControl>
+                                          <Input type="number" step="any" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={form.control}
+                                    name={`groups.${index}.samples`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Samples (n)</FormLabel>
+                                        <FormControl>
+                                          <Input type="number" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        )
+                      })}
+                    </Accordion>
                     <Button
                       type="button"
                       variant="outline"
@@ -634,161 +649,170 @@ export default function Home() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                     {statTestFields.map((field, index) => {
-                      const testResult = testResults[index];
-                      const currentTest = form.getValues('statisticalTests')[index];
-                       return (
-                        <div key={field.id} className="space-y-4 rounded-lg border p-4">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold">Comparison #{index + 1}</h4>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeStatTest(index)}
-                              disabled={statTestFields.length <= 1}
-                              aria-label="Remove test"
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                              <FormField
-                                control={form.control}
-                                name={`statisticalTests.${index}.group1`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Compare Group</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value}>
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select a group" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name={`statisticalTests.${index}.group2`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>With Group</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value}>
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select a group" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <FormField
-                            control={form.control}
-                            name={`statisticalTests.${index}.test`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Statistical Test</FormLabel>
-                                <Select
-                                  onValueChange={field.onChange}
-                                  defaultValue={field.value}
+                  <CardContent className="space-y-2">
+                     <Accordion type="multiple" className="w-full">
+                       {statTestFields.map((field, index) => {
+                        const testResult = testResults[index];
+                        const currentTest = form.getValues('statisticalTests')[index];
+                         return (
+                          <AccordionItem value={`test-${index}`} key={field.id}>
+                            <AccordionTrigger>
+                              <div className="flex w-full items-center justify-between pr-4">
+                                <span>Comparison #{index + 1}</span>
+                                 <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeStatTest(index);
+                                  }}
+                                  disabled={statTestFields.length <= 1}
+                                  aria-label="Remove test"
+                                  className="h-8 w-8"
                                 >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select a test" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="t-test">
-                                      T-test
-                                    </SelectItem>
-                                    <SelectItem value="one-way-anova">
-                                      One-way ANOVA
-                                    </SelectItem>
-                                    <SelectItem value="tukey-kramer">
-                                      Tukey-Kramer test
-                                    </SelectItem>
-                                    <SelectItem value="mann-whitney">
-                                      Mann-Whitney U
-                                    </SelectItem>
-                                    <SelectItem value="kruskal-wallis">
-                                      Kruskal-Wallis
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`statisticalTests.${index}.significanceLevel`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Significance Level (p)</FormLabel>
-                                <Select
-                                  onValueChange={field.onChange}
-                                  defaultValue={field.value}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select a p-value" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="0.05">&lt; 0.05</SelectItem>
-                                    <SelectItem value="0.01">&lt; 0.01</SelectItem>
-                                    <SelectItem value="0.001">&lt; 0.001</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          </div>
-                          <Button type="button" className="w-full" disabled={testResult?.isLoading} onClick={() => onRunTest(index, currentTest)}>
-                            {testResult?.isLoading ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Calculating...
-                              </>
-                            ) : (
-                              <>
-                              <Sparkles className="mr-2 h-5 w-5" />
-                              Run Test #{index + 1}
-                              </>
-                            )}
-                          </Button>
-                          {testResult?.result && (
-                              <div className="space-y-2 rounded-lg border bg-muted/50 p-4">
-                                  <h4 className="font-headline text-md font-semibold">Test Result</h4>
-                                  <p className="text-sm">
-                                      Calculated p-value: <span className="font-mono font-bold text-primary">{testResult.result.pValue.toExponential(4)}</span>
-                                  </p>
-                                  <p className={cn("text-sm font-medium", testResult.result.pValue < parseFloat(currentTest.significanceLevel) ? "text-green-500" : "text-amber-500")}>
-                                      {testResult.result.pValue < parseFloat(currentTest.significanceLevel)
-                                      ? "The difference is statistically significant."
-                                      : "The difference is not statistically significant."}
-                                  </p>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
                               </div>
-                          )}
-                          {index < statTestFields.length - 1 && <Separator />}
-                        </div>
-                       )
-                      })}
+                            </AccordionTrigger>
+                            <AccordionContent className="p-4 space-y-4">
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                  <FormField
+                                    control={form.control}
+                                    name={`statisticalTests.${index}.group1`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Compare Group</FormLabel>
+                                        <Select onValueChange={field.onChange} value={field.value}>
+                                          <FormControl>
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select a group" />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={form.control}
+                                    name={`statisticalTests.${index}.group2`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>With Group</FormLabel>
+                                        <Select onValueChange={field.onChange} value={field.value}>
+                                          <FormControl>
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select a group" />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                              <FormField
+                                control={form.control}
+                                name={`statisticalTests.${index}.test`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Statistical Test</FormLabel>
+                                    <Select
+                                      onValueChange={field.onChange}
+                                      defaultValue={field.value}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select a test" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="t-test">
+                                          T-test
+                                        </SelectItem>
+                                        <SelectItem value="one-way-anova">
+                                          One-way ANOVA
+                                        </SelectItem>
+                                        <SelectItem value="tukey-kramer">
+                                          Tukey-Kramer test
+                                        </SelectItem>
+                                        <SelectItem value="mann-whitney">
+                                          Mann-Whitney U
+                                        </SelectItem>
+                                        <SelectItem value="kruskal-wallis">
+                                          Kruskal-Wallis
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name={`statisticalTests.${index}.significanceLevel`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Significance Level (p)</FormLabel>
+                                    <Select
+                                      onValueChange={field.onChange}
+                                      defaultValue={field.value}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select a p-value" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="0.05">&lt; 0.05</SelectItem>
+                                        <SelectItem value="0.01">&lt; 0.01</SelectItem>
+                                        <SelectItem value="0.001">&lt; 0.001</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              </div>
+                              <Button type="button" className="w-full" disabled={testResult?.isLoading} onClick={() => onRunTest(index, currentTest)}>
+                                {testResult?.isLoading ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Calculating...
+                                  </>
+                                ) : (
+                                  <>
+                                  <Sparkles className="mr-2 h-5 w-5" />
+                                  Run Test #{index + 1}
+                                  </>
+                                )}
+                              </Button>
+                              {testResult?.result && (
+                                  <div className="space-y-2 rounded-lg border bg-muted/50 p-4">
+                                      <h4 className="font-headline text-md font-semibold">Test Result</h4>
+                                      <p className="text-sm">
+                                          Calculated p-value: <span className="font-mono font-bold text-primary">{testResult.result.pValue.toExponential(4)}</span>
+                                      </p>
+                                      <p className={cn("text-sm font-medium", testResult.result.pValue < parseFloat(currentTest.significanceLevel) ? "text-green-500" : "text-amber-500")}>
+                                          {testResult.result.pValue < parseFloat(currentTest.significanceLevel)
+                                          ? "The difference is statistically significant."
+                                          : "The difference is not statistically significant."}
+                                      </p>
+                                  </div>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                         )
+                        })}
+                      </Accordion>
                       <Button
                         type="button"
                         variant="outline"
@@ -1110,3 +1134,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
