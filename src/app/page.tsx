@@ -60,9 +60,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { AnalysisResult, StatisticalTestResult } from "./actions";
-import { runAnalysis, performStatisticalTest } from "./actions";
+import { runAnalysis, performStatisticalTest, adjustRsquared } from "./actions";
 import { formSchema } from "./schemas";
-import type { StatisticalTest } from "./schemas";
+import type { StatisticalTest, StandardPoint } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
 import type { StatisticalTestInput } from "@/ai/flows/statistical-analysis.schemas";
 
@@ -96,6 +96,7 @@ export default function Home() {
     null
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [isAdjusting, setIsAdjusting] = useState(false);
   const [testResults, setTestResults] = useState<TestResultState>({});
   const [standardCurveInfo, setStandardCurveInfo] = useState<StandardCurveInfo>(null);
 
@@ -124,7 +125,8 @@ export default function Home() {
           test: "t-test",
           significanceLevel: "0.05",
         }
-      ]
+      ],
+      targetR2: 0.99
     },
   });
 
@@ -142,6 +144,7 @@ export default function Home() {
     append: appendStandardPoint,
     remove: removeStandardPoint,
     update: updateStandardPoint,
+    replace: replaceStandardCurve
   } = useFieldArray({
     control: form.control,
     name: "standardCurve",
@@ -177,8 +180,10 @@ export default function Home() {
   }, [watchedStandardCurve]);
 
 
-  function autoFillAbsorbance() {
+  async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
+    const targetR2 = form.getValues("targetR2");
+
     if (points.length < 2) {
       toast({
         variant: "destructive",
@@ -188,53 +193,26 @@ export default function Home() {
       return;
     }
     
-    const firstPoint = points[0];
-    const lastPoint = points[points.length - 1];
+    setIsAdjusting(true);
+    try {
+        const adjustedPoints = await adjustRsquared(points, targetR2);
+        replaceStandardCurve(adjustedPoints);
+        updateCurveInfo(adjustedPoints);
+        toast({
+            title: "Auto-fill Complete",
+            description: `Absorbance values adjusted to achieve target R².`,
+        });
 
-    if (firstPoint.concentration === lastPoint.concentration) {
+    } catch (error) {
+        console.error(error);
         toast({
             variant: "destructive",
-            title: "Invalid concentrations",
-            description: "First and last concentration values cannot be the same.",
+            title: "Auto-fill Failed",
+            description: error instanceof Error ? error.message : "An unknown error occurred.",
         });
-        return;
+    } finally {
+        setIsAdjusting(false);
     }
-    
-    const firstAbsorbance = typeof firstPoint.absorbance === 'string' ? parseFloat(firstPoint.absorbance) : firstPoint.absorbance;
-    const lastAbsorbance = typeof lastPoint.absorbance === 'string' ? parseFloat(lastPoint.absorbance) : lastPoint.absorbance;
-
-    if (isNaN(firstAbsorbance) || isNaN(lastAbsorbance)) {
-       toast({
-            variant: "destructive",
-            title: "Invalid absorbance values",
-            description: "First and last absorbance values must be numbers.",
-        });
-        return;
-    }
-    
-    const slope = (lastAbsorbance - firstAbsorbance) / (lastPoint.concentration - firstPoint.concentration);
-    
-    const updatedPoints = [...points];
-
-    for (let i = 1; i < points.length - 1; i++) {
-        const point = points[i];
-        const concentration = typeof point.concentration === 'string' ? parseFloat(point.concentration) : point.concentration;
-        const firstConc = typeof firstPoint.concentration === 'string' ? parseFloat(firstPoint.concentration) : firstPoint.concentration;
-        
-        if(isNaN(concentration) || isNaN(firstConc)) continue;
-
-        const absorbance = firstAbsorbance + slope * (concentration - firstConc);
-        const updatedPoint = { ...point, absorbance: parseFloat(absorbance.toFixed(4)) };
-        updateStandardPoint(i, updatedPoint);
-        updatedPoints[i] = updatedPoint;
-    }
-    
-    updateCurveInfo(updatedPoints);
-
-    toast({
-        title: "Auto-fill Complete",
-        description: "Intermediate absorbance values have been calculated.",
-    });
   }
 
 
@@ -316,7 +294,6 @@ export default function Home() {
     }
   }
 
-  // Derived state for forward test results
   const forwardTestResults = React.useMemo(() => {
     if (!analysisResult) return null;
 
@@ -339,6 +316,7 @@ export default function Home() {
       };
     });
   }, [analysisResult]);
+
 
   const watchedGroups = form.watch('groups');
   
@@ -883,6 +861,28 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
+                    {standardCurveFields.length >= 2 && (
+                         <FormField
+                            control={form.control}
+                            name="targetR2"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel>Target R² (Optional)</FormLabel>
+                                <FormControl>
+                                    <Input
+                                    type="number"
+                                    step="0.001"
+                                    min="0"
+                                    max="1"
+                                    placeholder="e.g., 0.995"
+                                    {...field}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                                </FormItem>
+                            )}
+                            />
+                    )}
                      <div className="flex flex-col gap-2 sm:flex-row">
                       <Button
                         type="button"
@@ -899,9 +899,19 @@ export default function Home() {
                         variant="secondary"
                         onClick={autoFillAbsorbance}
                         className="flex-1"
-                        disabled={standardCurveFields.length < 2}
+                        disabled={standardCurveFields.length < 2 || isAdjusting}
                       >
-                        <Wand2 className="mr-2 h-4 w-4" /> Auto-fill Absorbance
+                        {isAdjusting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Adjusting...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="mr-2 h-4 w-4" /> 
+                            Auto-fill Absorbance
+                          </>
+                        )}
                       </Button>
                     </div>
                     {standardCurveInfo && (

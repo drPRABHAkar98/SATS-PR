@@ -15,6 +15,8 @@ export const standardPointSchema = z.object({
   absorbance: z.coerce.number({ invalid_type_error: "Must be a number." }).nonnegative(),
 });
 
+export type StandardPoint = z.infer<typeof standardPointSchema>;
+
 export const statisticalTestSchema = z.object({
   group1: z.string().min(1, "Please select a group."),
   group2: z.string().min(1, "Please select a group."),
@@ -29,6 +31,7 @@ export const formSchema = z.object({
   units: z.string().optional(),
   date: z.string().optional(),
   experimentName: z.string().optional(),
+  targetR2: z.coerce.number().optional(),
   groups: z.array(groupSchema).min(1, "At least one group is required."),
   standardCurve: z
     .array(standardPointSchema)
