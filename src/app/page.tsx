@@ -836,7 +836,7 @@ export default function Home() {
                                 placeholder="e.g., 0.995. Leave blank for perfect R²."
                                 {...field}
                                 onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                value={field.value === undefined ? '' : field.value}
+                                value={field.value ?? ''}
                                 />
                             </FormControl>
                             <FormMessage />
