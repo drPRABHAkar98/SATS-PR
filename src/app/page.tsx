@@ -533,30 +533,27 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    <Accordion type="multiple" className="w-full">
+                    <Accordion type="multiple" className="w-full" defaultValue={groupFields.map((_, index) => `item-${index}`)}>
                       {groupFields.map((field, index) => {
                         const groupName = form.watch(`groups.${index}.name`);
                         return (
                           <AccordionItem value={`item-${index}`} key={field.id}>
-                            <AccordionTrigger>
-                              <div className="flex w-full items-center justify-between pr-4">
-                                <span>Group: {groupName || `(Group ${index + 1})`}</span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation(); // prevent accordion from toggling
-                                    removeGroup(index);
-                                  }}
-                                  disabled={groupFields.length <= 1}
-                                  aria-label="Remove group"
-                                  className="h-8 w-8"
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </div>
-                            </AccordionTrigger>
+                            <div className="flex items-center">
+                              <AccordionTrigger className="flex-1 pr-2">
+                                Group: {groupName || `(Group ${index + 1})`}
+                              </AccordionTrigger>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeGroup(index)}
+                                disabled={groupFields.length <= 1}
+                                aria-label="Remove group"
+                                className="h-8 w-8 shrink-0"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                             <AccordionContent className="p-4">
                               <div className="grid grid-cols-1 gap-4">
                                 <FormField
@@ -650,31 +647,28 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                     <Accordion type="multiple" className="w-full">
+                     <Accordion type="multiple" className="w-full" defaultValue={statTestFields.map((_, index) => `test-${index}`)}>
                        {statTestFields.map((field, index) => {
                         const testResult = testResults[index];
                         const currentTest = form.getValues('statisticalTests')[index];
                          return (
                           <AccordionItem value={`test-${index}`} key={field.id}>
-                            <AccordionTrigger>
-                              <div className="flex w-full items-center justify-between pr-4">
-                                <span>Comparison #{index + 1}</span>
-                                 <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeStatTest(index);
-                                  }}
-                                  disabled={statTestFields.length <= 1}
-                                  aria-label="Remove test"
-                                  className="h-8 w-8"
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </div>
-                            </AccordionTrigger>
+                            <div className="flex items-center">
+                              <AccordionTrigger className="flex-1 pr-2">
+                                Comparison #{index + 1}
+                              </AccordionTrigger>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeStatTest(index)}
+                                disabled={statTestFields.length <= 1}
+                                aria-label="Remove test"
+                                className="h-8 w-8 shrink-0"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                             <AccordionContent className="p-4 space-y-4">
                               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                   <FormField
@@ -866,7 +860,7 @@ export default function Home() {
                                 placeholder="e.g., 0.995. Leave blank for perfect R²."
                                 {...field}
                                 onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                value={field.value ?? ''}
+                                value={field.value === undefined ? '' : field.value}
                                 />
                             </FormControl>
                             <FormMessage />
@@ -1134,5 +1128,7 @@ export default function Home() {
     </div>
   );
 }
+
+    
 
     
