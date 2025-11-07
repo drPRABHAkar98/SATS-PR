@@ -49,20 +49,17 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
     // Create a deep copy to avoid modifying the original points array directly
     let updatedPoints = points.map(p => ({...p}));
 
-    if (!targetR2) { // If no target R2, create a perfect line
+    if (targetR2 === undefined || targetR2 === 1) { // If no target R2 or target is 1, create a perfect line
         updatedPoints = updatedPoints.map(point => {
             const absorbance = firstAbsorbance + slope * (point.concentration - firstPoint.concentration);
             return { ...point, absorbance: parseFloat(absorbance.toFixed(4)) };
         });
     } else { // If there is a target R2, adjust the middle points
-        const concentrations = updatedPoints.map(p => p.concentration);
         const linearAbsorbances = updatedPoints.map(p => firstAbsorbance + slope * (p.concentration - firstPoint.concentration));
         
-        // Calculate Sum of Squares Total (SST) based on the perfect linear fit
         const yMean = linearAbsorbances.reduce((s, v) => s + v, 0) / linearAbsorbances.length;
         const totalSumOfSquaresSST = linearAbsorbances.reduce((s, v) => s + (v - yMean) ** 2, 0);
-
-        // Calculate the required Sum of Squared Errors (SSE) for the target R²
+        
         const targetSSE = totalSumOfSquaresSST * (1 - targetR2);
 
         if (targetSSE < 0) {
@@ -74,15 +71,52 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
             throw new Error("Not enough middle points to adjust for R².");
         }
 
-        // Distribute the error among the middle points
         const errorPerPoint = Math.sqrt(targetSSE / numMiddlePoints);
         
+        let cumulativeNoise = 0;
         for (let i = 1; i < updatedPoints.length - 1; i++) {
-            // Apply alternating noise to keep the regression line relatively stable
-            const noise = (i % 2 === 0 ? 1 : -1) * errorPerPoint * (Math.random() * 0.4 + 0.8); // Add some randomness
-            const newAbsorbance = linearAbsorbances[i] + noise;
+            // Apply noise that trends, but randomly oscillates around the trend
+            const randomFactor = (Math.random() - 0.5) * 0.5; // smaller random oscillation
+            const trendFactor = (i - numMiddlePoints / 2) / (numMiddlePoints / 2); // create a trend
+            
+            let noise = errorPerPoint * (trendFactor + randomFactor);
+            
+            // To ensure the overall trend is maintained while meeting R2
+            // We alternate adding and subtracting but keep the magnitude based on a trend
+            const noiseDirection = (i % 2 === 0) ? 1 : -1;
+            noise = noiseDirection * Math.abs(noise);
+
+
+            let newAbsorbance = linearAbsorbances[i] + noise;
+
+            // Ensure absorbance values are monotonically increasing (or decreasing if slope is negative)
+            const prevAbsorbance = updatedPoints[i-1].absorbance;
+            if (slope > 0 && newAbsorbance < prevAbsorbance) {
+                newAbsorbance = prevAbsorbance + Math.random() * 0.001; // add a tiny bit to keep it increasing
+            } else if (slope < 0 && newAbsorbance > prevAbsorbance) {
+                newAbsorbance = prevAbsorbance - Math.random() * 0.001; // subtract a tiny bit
+            }
+
+
             updatedPoints[i].absorbance = parseFloat(Math.max(0, newAbsorbance).toFixed(4));
         }
+
+        // Final pass to ensure monotonicity after random adjustments
+        for (let i = 1; i < updatedPoints.length - 1; i++) {
+            const prev = updatedPoints[i-1].absorbance;
+            const current = updatedPoints[i].absorbance;
+            const next = linearAbsorbances[i+1]; // compare to ideal next to not drift too far
+            
+            if (slope > 0) {
+                if (current < prev) updatedPoints[i].absorbance = prev + 0.0001;
+                if (current > next && i + 1 < updatedPoints.length -1) updatedPoints[i].absorbance = (prev + next) / 2;
+            } else {
+                 if (current > prev) updatedPoints[i].absorbance = prev - 0.0001;
+                 if (current < next && i + 1 < updatedPoints.length -1) updatedPoints[i].absorbance = (prev + next) / 2;
+            }
+            updatedPoints[i].absorbance = parseFloat(Math.max(0, updatedPoints[i].absorbance).toFixed(4))
+        }
+
     }
     
     // Return the full list of updated points
