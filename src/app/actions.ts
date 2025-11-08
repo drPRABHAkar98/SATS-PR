@@ -1,3 +1,4 @@
+
 'use server';
 
 import { z } from 'zod';
@@ -66,29 +67,27 @@ function performTTest(group1: { mean: number; sd: number; samples: number; }, gr
     
     // Calculate the t-statistic
     const pooledStdDev = Math.sqrt(((n1 - 1) * sd1 * sd1 + (n2 - 1) * sd2 * sd2) / (n1 + n2 - 2));
+    if (pooledStdDev === 0) return { pValue: 1.0 }; // If there's no variance, the means are the same for p-value purposes
+    
     const tStatistic = (mean1 - mean2) / (pooledStdDev * Math.sqrt(1/n1 + 1/n2));
     
     // Degrees of freedom
     const df = n1 + n2 - 2;
 
-    // This is a simplified p-value calculation.
-    // For a more accurate result, a library for the incomplete beta function would be needed.
-    // This approximation works reasonably well for df > 10.
-    const absT = Math.abs(tStatistic);
-    let pValue;
+    if (df <= 0) return { pValue: NaN };
 
-    if (df <= 1) pValue = 1.0;
-    else if (df <= 30) { // Use a common table lookup approximation for smaller df
-        const tValues = [12.71, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042];
-        const pForT = (t: number) => {
-            if (absT > t) return 0.05;
-            return 0.1;
-        };
-        pValue = pForT(tValues[df - 1]);
-    } else { // Normal distribution approximation for larger df
-        let p = Math.exp(-0.717 * absT - 0.416 * absT * absT);
-        pValue = p;
+    // This is a simplified p-value calculation using a normal distribution approximation,
+    // which is reasonable for df > 30 but less accurate for small df.
+    // For a production-grade tool, a better approximation or a library would be needed.
+    const absT = Math.abs(tStatistic);
+    
+    // Approximation of the standard normal CDF
+    const normalCdf = (x: number) => {
+        return 0.5 * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * Math.pow(x, 3))));
     }
+
+    // Two-tailed p-value
+    const pValue = 2 * (1 - normalCdf(absT));
 
 
     return { pValue };
@@ -145,10 +144,15 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
         const yMean = linearAbsorbances.reduce((s, v) => s + v, 0) / linearAbsorbances.length;
         const totalSumOfSquaresSST = linearAbsorbances.reduce((s, v) => s + (v - yMean) ** 2, 0);
         
+        if (totalSumOfSquaresSST === 0) {
+             throw new Error("Cannot adjust R² because all absorbance values are identical. There is no variance.");
+        }
+
         const targetSSE = totalSumOfSquaresSST * (1 - targetR2);
 
         if (targetSSE < 0) {
-            throw new Error("Cannot achieve target R² as it is too high for this data.");
+            // This case should be rare but can happen with floating point inaccuracies
+            throw new Error("Cannot achieve target R² as it is too high for this data. Try a value closer to 1.");
         }
         
         const numMiddlePoints = updatedPoints.length - 2;
@@ -158,50 +162,26 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
 
         const errorPerPoint = Math.sqrt(targetSSE / numMiddlePoints);
         
-        let cumulativeNoise = 0;
         for (let i = 1; i < updatedPoints.length - 1; i++) {
-            // Apply noise that trends, but randomly oscillates around the trend
-            const randomFactor = (Math.random() - 0.5) * 0.5; // smaller random oscillation
-            const trendFactor = (i - numMiddlePoints / 2) / (numMiddlePoints / 2); // create a trend
-            
-            let noise = errorPerPoint * (trendFactor + randomFactor);
-            
-            // To ensure the overall trend is maintained while meeting R2
-            // We alternate adding and subtracting but keep the magnitude based on a trend
+            // Alternate adding and subtracting the error to distribute it
             const noiseDirection = (i % 2 === 0) ? 1 : -1;
-            noise = noiseDirection * Math.abs(noise);
-
-
+            const noise = errorPerPoint * noiseDirection * Math.random(); // Add some randomness to the distribution
+            
             let newAbsorbance = linearAbsorbances[i] + noise;
-
-            // Ensure absorbance values are monotonically increasing (or decreasing if slope is negative)
-            const prevAbsorbance = updatedPoints[i-1].absorbance;
-            if (slope > 0 && newAbsorbance < prevAbsorbance) {
-                newAbsorbance = prevAbsorbance + Math.random() * 0.001; // add a tiny bit to keep it increasing
-            } else if (slope < 0 && newAbsorbance > prevAbsorbance) {
-                newAbsorbance = prevAbsorbance - Math.random() * 0.001; // subtract a tiny bit
-            }
-
 
             updatedPoints[i].absorbance = parseFloat(Math.max(0, newAbsorbance).toFixed(4));
         }
 
-        // Final pass to ensure monotonicity after random adjustments
-        for (let i = 1; i < updatedPoints.length - 1; i++) {
-            const prev = updatedPoints[i-1].absorbance;
-            const current = updatedPoints[i].absorbance;
-            const next = linearAbsorbances[i+1]; // compare to ideal next to not drift too far
-            
-            if (slope > 0) {
-                if (current < prev) updatedPoints[i].absorbance = prev + 0.0001;
-                if (current > next && i + 1 < updatedPoints.length -1) updatedPoints[i].absorbance = (prev + next) / 2;
-            } else {
-                 if (current > prev) updatedPoints[i].absorbance = prev - 0.0001;
-                 if (current < next && i + 1 < updatedPoints.length -1) updatedPoints[i].absorbance = (prev + next) / 2;
+        // A final pass to enforce strict monotonicity
+        for (let i = 1; i < updatedPoints.length; i++) {
+            const prevAbsorbance = updatedPoints[i-1].absorbance;
+            if (slope > 0 && updatedPoints[i].absorbance < prevAbsorbance) {
+                updatedPoints[i].absorbance = prevAbsorbance + Math.random() * 0.0001; // Add tiny random amount
+            } else if (slope < 0 && updatedPoints[i].absorbance > prevAbsorbance) {
+                updatedPoints[i].absorbance = prevAbsorbance - Math.random() * 0.0001; // Subtract tiny random amount
             }
-            updatedPoints[i].absorbance = parseFloat(Math.max(0, updatedPoints[i].absorbance).toFixed(4))
+             updatedPoints[i].absorbance = parseFloat(Math.max(0, updatedPoints[i].absorbance).toFixed(4));
         }
-
     }
     
     // Return the full list of updated points
@@ -264,7 +244,7 @@ export type StatisticalTestResult = {
 
 export type StatisticalTestRunner = {
     group1: { name: string; mean: number; sd: number; samples: number };
-    group2: { name: string; mean: number; sd: number; samples: number };
+    group2: { name:string; mean: number; sd: number; samples: number };
     test: string;
 }
 
@@ -289,7 +269,7 @@ export async function performStatisticalTest(
         }
         
         if (isNaN(result.pValue)) {
-            throw new Error("Calculation resulted in NaN. Check input data, especially sample sizes.");
+            throw new Error("Calculation resulted in NaN. Check input data, especially sample sizes and standard deviations.");
         }
 
         return {
