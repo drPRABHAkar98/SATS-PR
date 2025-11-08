@@ -60,12 +60,11 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import type { AnalysisResult, StatisticalTestResult } from "./actions";
+import type { AnalysisResult, StatisticalTestResult, StatisticalTestRunner } from "./actions";
 import { runAnalysis, performStatisticalTest, adjustRsquared } from "./actions";
 import { formSchema } from "./schemas";
 import type { StatisticalTest, StandardPoint } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
-import type { StatisticalTestInput } from "@/ai/flows/statistical-analysis.schemas";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
@@ -271,7 +270,7 @@ export default function Home() {
     setTestResults(prev => ({ ...prev, [testIndex]: { isLoading: true, result: null }}));
 
     try {
-      const testInput: StatisticalTestInput = {
+      const testInput: StatisticalTestRunner = {
         group1: {
           name: group1Data.name,
           mean: Number(group1Data.mean),
@@ -281,7 +280,7 @@ export default function Home() {
         group2: {
           name: group2Data.name,
           mean: Number(group2Data.mean),
-          sd: Number(group2Data.samples),
+          sd: Number(group2Data.sd),
           samples: Number(group2Data.samples),
         },
         test: test,
@@ -1128,7 +1127,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
-
-    
