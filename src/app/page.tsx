@@ -184,15 +184,26 @@ export default function Home() {
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
     const targetR2Value = form.getValues("targetR2");
-    // Ensure targetR2 is either a number or undefined, not an empty string or other falsy values.
+    
     const targetR2 = targetR2Value === "" || targetR2Value === null || isNaN(Number(targetR2Value)) ? undefined : Number(targetR2Value);
-
 
     if (points.length < 2) {
       toast({
         variant: "destructive",
         title: "Not enough data points",
         description: "You need at least two points to create a linear curve.",
+      });
+      return;
+    }
+
+    const firstPoint = points[0];
+    const lastPoint = points[points.length - 1];
+
+    if (firstPoint.concentration === lastPoint.concentration) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Concentration",
+        description: "The first and last points of the curve cannot have the same concentration value.",
       });
       return;
     }
@@ -892,7 +903,7 @@ export default function Home() {
                               <FormItem>
                                 {index === 0 && <FormLabel>Absorbance</FormLabel>}
                                 <FormControl>
-                                  <Input type="number" step="any" {...field} />
+                                  <Input type="number" step="any" {...field} value={field.value ?? ''} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
