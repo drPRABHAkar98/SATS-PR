@@ -163,14 +163,30 @@ export default function Home() {
   const watchedStandardCurve = form.watch('standardCurve');
   
   const updateCurveInfo = (data: {concentration: number, absorbance: number}[]) => {
+      if (data.length < 2) {
+          setStandardCurveInfo(null);
+          return;
+      }
+
+      // Check if concentrations are sorted and unique
+      let isSortedAndUnique = true;
+      for (let i = 0; i < data.length - 1; i++) {
+        if (data[i].concentration >= data[i+1].concentration) {
+            isSortedAndUnique = false;
+            break;
+        }
+      }
+      
+      if (!isSortedAndUnique) {
+          setStandardCurveInfo(null);
+          return;
+      }
+      
       const points = data.map(p => ({ x: p.concentration, y: p.absorbance }));
-      if (points.length >= 2) {
-          const regression = calculateLinearRegression(points);
-          if (!isNaN(regression.m) && !isNaN(regression.c)) {
-              setStandardCurveInfo(regression);
-          } else {
-              setStandardCurveInfo(null);
-          }
+
+      const regression = calculateLinearRegression(points);
+      if (!isNaN(regression.m) && !isNaN(regression.c)) {
+          setStandardCurveInfo(regression);
       } else {
           setStandardCurveInfo(null);
       }
@@ -1138,3 +1154,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
