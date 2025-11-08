@@ -185,7 +185,7 @@ export default function Home() {
     const points = form.getValues("standardCurve");
     const targetR2Value = form.getValues("targetR2");
     // Ensure targetR2 is either a number or undefined, not an empty string or other falsy values.
-    const targetR2 = targetR2Value === "" || targetR2Value === null ? undefined : Number(targetR2Value);
+    const targetR2 = targetR2Value === "" || targetR2Value === null || isNaN(Number(targetR2Value)) ? undefined : Number(targetR2Value);
 
 
     if (points.length < 2) {
@@ -858,7 +858,7 @@ export default function Home() {
                                 max="1"
                                 placeholder="e.g., 0.995. Leave blank for perfect R²."
                                 {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                onChange={(e) => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
                                 value={field.value ?? ''}
                                 />
                             </FormControl>
