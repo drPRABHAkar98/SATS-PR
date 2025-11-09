@@ -256,15 +256,8 @@ export async function performStatisticalTest(
             case 't-test':
                 result = performTTest(values.group1, values.group2);
                 break;
-            // Other tests like ANOVA would be more complex and require more data
-            // or a different input structure.
-            case 'one-way-anova':
-            case 'tukey-kramer':
-            case 'mann-whitney':
-            case 'kruskal-wallis':
-                 throw new Error(`The '${values.test}' test is not implemented yet.`);
             default:
-                throw new Error(`Unknown statistical test: ${values.test}`);
+                throw new Error(`Unknown or unimplemented statistical test: ${values.test}`);
         }
         
         if (isNaN(result.pValue)) {
@@ -282,3 +275,5 @@ export async function performStatisticalTest(
         throw new Error('An unknown error occurred during the statistical test.');
     }
 }
+
+    

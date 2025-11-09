@@ -764,18 +764,6 @@ export default function Home() {
                                         <SelectItem value="t-test">
                                           T-test
                                         </SelectItem>
-                                        <SelectItem value="one-way-anova">
-                                          One-way ANOVA
-                                        </SelectItem>
-                                        <SelectItem value="tukey-kramer">
-                                          Tukey-Kramer test
-                                        </SelectItem>
-                                        <SelectItem value="mann-whitney">
-                                          Mann-Whitney U
-                                        </SelectItem>
-                                        <SelectItem value="kruskal-wallis">
-                                          Kruskal-Wallis
-                                        </SelectItem>
                                       </SelectContent>
                                     </Select>
                                     <FormMessage />
