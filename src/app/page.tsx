@@ -228,8 +228,14 @@ export default function Home() {
     try {
         const adjustedPoints = await adjustRsquared(points, targetR2);
         replaceStandardCurve(adjustedPoints);
-        updateCurveInfo(adjustedPoints);
+        
+        // This is the crucial part: Force an update to the info display after state has settled.
         const finalRegression = calculateLinearRegression(adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance})));
+        if (!isNaN(finalRegression.m) && !isNaN(finalRegression.c)) {
+          setStandardCurveInfo(finalRegression);
+        } else {
+          setStandardCurveInfo(null);
+        }
 
         toast({
             title: "Auto-fill Complete",
@@ -885,7 +891,7 @@ export default function Home() {
                                 max="1"
                                 placeholder="e.g., 0.995. Leave blank for perfect R²."
                                 {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                                onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
                                 value={field.value ?? ''}
                                 />
                             </FormControl>
