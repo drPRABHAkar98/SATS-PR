@@ -913,7 +913,7 @@ export default function Home() {
                               <FormItem>
                                 {index === 0 && <FormLabel>Absorbance</FormLabel>}
                                 <FormControl>
-                                  <Input type="number" step="any" {...field} value={field.value ?? ''} />
+                                  <Input type="number" step="any" {...field} value={isNaN(field.value) ? '' : field.value} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
