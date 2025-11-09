@@ -23,6 +23,7 @@ import {
   Sparkles,
   Download,
   BookUser,
+  Check,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -66,6 +68,8 @@ import { formSchema } from "./schemas";
 import type { StatisticalTest, StandardPoint } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 
 // Helper function to calculate standard deviation
@@ -121,8 +125,7 @@ export default function Home() {
       ],
       statisticalTests: [
         {
-          group1: "Normal",
-          group2: "Diseased",
+          selectedGroups: ["Normal", "Diseased"],
           test: "t-test",
           significanceLevel: "0.05",
         }
@@ -167,24 +170,16 @@ export default function Home() {
           setStandardCurveInfo(null);
           return;
       }
-
-      // Check if concentrations are sorted and unique
-      let isSortedAndUnique = true;
-      for (let i = 0; i < data.length - 1; i++) {
-        if (data[i].concentration >= data[i+1].concentration) {
-            isSortedAndUnique = false;
-            break;
-        }
-      }
       
-      if (!isSortedAndUnique) {
+      const validPoints = data.filter(p => !isNaN(p.concentration) && !isNaN(p.absorbance));
+      if (validPoints.length < 2) {
           setStandardCurveInfo(null);
           return;
       }
-      
-      const points = data.map(p => ({ x: p.concentration, y: p.absorbance }));
 
+      const points = validPoints.map(p => ({ x: p.concentration, y: p.absorbance }));
       const regression = calculateLinearRegression(points);
+
       if (!isNaN(regression.m) && !isNaN(regression.c)) {
           setStandardCurveInfo(regression);
       } else {
@@ -201,7 +196,7 @@ export default function Home() {
     const points = form.getValues("standardCurve");
     const targetR2Value = form.getValues("targetR2");
     
-    const targetR2 = targetR2Value === "" || targetR2Value === null || isNaN(Number(targetR2Value)) ? undefined : Number(targetR2Value);
+    const targetR2 = targetR2Value === null || targetR2Value === undefined || isNaN(Number(targetR2Value)) ? undefined : Number(targetR2Value);
 
     if (points.length < 2) {
       toast({
@@ -229,7 +224,6 @@ export default function Home() {
         const adjustedPoints = await adjustRsquared(points, targetR2);
         replaceStandardCurve(adjustedPoints);
         
-        // This is the crucial part: Force an update to the info display after state has settled.
         const finalRegression = calculateLinearRegression(adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance})));
         if (!isNaN(finalRegression.m) && !isNaN(finalRegression.c)) {
           setStandardCurveInfo(finalRegression);
@@ -279,26 +273,25 @@ export default function Home() {
   }
 
   async function onRunTest(testIndex: number, testData: StatisticalTest) {
-    const { group1: g1name, group2: g2name, test } = testData;
+    const { selectedGroups, test } = testData;
     const allGroups = form.getValues('groups');
 
-    if (test === 't-test') {
-      if (!g1name || !g2name) {
-        toast({ variant: "destructive", title: "Please select two groups to compare." });
-        return;
-      }
-      if (g1name === g2name) {
-        toast({ variant: "destructive", title: "Cannot compare a group to itself."});
-        return;
-      }
+    if (!selectedGroups || selectedGroups.length < 2) {
+      toast({ variant: "destructive", title: "Selection Error", description: "Please select at least two groups to compare." });
+      return;
     }
+
+    if (test === 't-test' && selectedGroups.length !== 2) {
+       toast({ variant: "destructive", title: "Selection Error", description: "T-test requires exactly two groups." });
+       return;
+    }
+
 
     setTestResults(prev => ({ ...prev, [testIndex]: { isLoading: true, result: null }}));
 
     try {
       const testInput: StatisticalTestRunner = {
-        group1: g1name,
-        group2: g2name,
+        selectedGroups: selectedGroups,
         allGroups: allGroups.map(g => ({
           name: g.name,
           mean: Number(g.mean),
@@ -405,7 +398,7 @@ export default function Home() {
             testResult.tukeyResults.results.forEach(res => {
               csvData.push([
                 `${res.group1} vs ${res.group2}`,
-                "Tukey's HSD",
+                "Tukey's Kramer",
                 `< ${test.significanceLevel}`,
                 "N/A",
                 res.significant ? "Significant" : "Not Significant"
@@ -414,7 +407,7 @@ export default function Home() {
           } else if (testResult.pValue !== undefined) {
              const significant = testResult.pValue < parseFloat(test.significanceLevel);
              csvData.push([
-              test.test === 't-test' ? `${test.group1} vs ${test.group2}` : "Overall",
+              test.selectedGroups.join(' vs '),
               test.test,
               `< ${test.significanceLevel}`,
               testResult.pValue.toExponential(4),
@@ -692,7 +685,7 @@ export default function Home() {
                                 Comparison #{index + 1}: <span className="ml-1 font-semibold">{
                                   testType === 't-test' ? 'T-test' :
                                   testType === 'one-way-anova' ? 'One-way ANOVA' :
-                                  testType === 'tukey-test' ? "Tukey's HSD" :
+                                  testType === 'tukey-kramer' ? "Tukey-Kramer test" :
                                   'Test'
                                 }</span>
                               </AccordionTrigger>
@@ -709,50 +702,57 @@ export default function Home() {
                               </Button>
                             </div>
                             <AccordionContent className="p-4 space-y-4">
-                              {testType === 't-test' && (
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                    <FormField
-                                      control={form.control}
-                                      name={`statisticalTests.${index}.group1`}
-                                      render={({ field }) => (
-                                        <FormItem>
-                                          <FormLabel>Compare Group</FormLabel>
-                                          <Select onValueChange={field.onChange} value={field.value}>
-                                            <FormControl>
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select a group" />
-                                              </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                              {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
-                                            </SelectContent>
-                                          </Select>
-                                          <FormMessage />
-                                        </FormItem>
-                                      )}
-                                    />
-                                    <FormField
-                                      control={form.control}
-                                      name={`statisticalTests.${index}.group2`}
-                                      render={({ field }) => (
-                                        <FormItem>
-                                          <FormLabel>With Group</FormLabel>
-                                          <Select onValueChange={field.onChange} value={field.value}>
-                                            <FormControl>
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select a group" />
-                                              </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                              {watchedGroups.map((g) => g.name && <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
-                                            </SelectContent>
-                                          </Select>
-                                          <FormMessage />
-                                        </FormItem>
-                                      )}
-                                    />
-                                  </div>
-                                )}
+                                <FormField
+                                  control={form.control}
+                                  name={`statisticalTests.${index}.selectedGroups`}
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <div className="mb-4">
+                                        <FormLabel className="text-base">Groups to Compare</FormLabel>
+                                        <FormDescription>
+                                          Select two for T-test, two or more for others.
+                                        </FormDescription>
+                                      </div>
+                                      <div className="space-y-2">
+                                      {watchedGroups.map((group) => (
+                                        <FormField
+                                          key={group.name}
+                                          control={form.control}
+                                          name={`statisticalTests.${index}.selectedGroups`}
+                                          render={({ field }) => {
+                                            return (
+                                              <FormItem
+                                                key={group.name}
+                                                className="flex flex-row items-start space-x-3 space-y-0"
+                                              >
+                                                <FormControl>
+                                                  <Checkbox
+                                                    checked={field.value?.includes(group.name)}
+                                                    onCheckedChange={(checked) => {
+                                                      return checked
+                                                        ? field.onChange([...(field.value || []), group.name])
+                                                        : field.onChange(
+                                                            field.value?.filter(
+                                                              (value) => value !== group.name
+                                                            )
+                                                          )
+                                                    }}
+                                                  />
+                                                </FormControl>
+                                                <FormLabel className="font-normal">
+                                                  {group.name}
+                                                </FormLabel>
+                                              </FormItem>
+                                            )
+                                          }}
+                                        />
+                                      ))}
+                                      </div>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+
 
                               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                               <FormField
@@ -772,8 +772,8 @@ export default function Home() {
                                       </FormControl>
                                       <SelectContent>
                                         <SelectItem value="t-test">T-test (2 groups)</SelectItem>
-                                        <SelectItem value="one-way-anova">One-way ANOVA (3+ groups)</SelectItem>
-                                        <SelectItem value="tukey-test">Tukey-Kramer test (post-hoc)</SelectItem>
+                                        <SelectItem value="one-way-anova">One-way ANOVA (2+ groups)</SelectItem>
+                                        <SelectItem value="tukey-kramer">Tukey-Kramer test (post-hoc)</SelectItem>
                                       </SelectContent>
                                     </Select>
                                     <FormMessage />
@@ -838,7 +838,7 @@ export default function Home() {
                                       )}
                                       {testResult.result.tukeyResults && (
                                         <div className="space-y-3">
-                                          <p className="text-sm">HSD (Honestly Significant Difference): <span className="font-mono font-bold text-primary">{testResult.result.tukeyResults.hsd.toFixed(4)}</span></p>
+                                          <p className="text-sm">HSD (Honestly Significant Difference) is pair-specific for this test.</p>
                                           <Table>
                                             <TableHeader>
                                               <TableRow>
@@ -873,8 +873,7 @@ export default function Home() {
                         variant="outline"
                         onClick={() =>
                           appendStatTest({
-                            group1: '',
-                            group2: '',
+                            selectedGroups: [],
                             test: 't-test',
                             significanceLevel: '0.05',
                           })
@@ -920,7 +919,7 @@ export default function Home() {
                                 max="1"
                                 placeholder="e.g., 0.995. Leave blank for perfect R²."
                                 {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                onChange={(e) => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
                                 value={field.value ?? ''}
                                 />
                             </FormControl>

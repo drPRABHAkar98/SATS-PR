@@ -164,20 +164,26 @@ function performAnova(groups: { name: string; mean: number; sd: number; samples:
 // q-value table for Tukey HSD (alpha=0.05). Simplified.
 const Q_TABLE_05: { [df: number]: { [k: number]: number } } = {
     // df_within: { num_groups: q_value }
-    5: { 2: 3.64, 3: 4.6, 4: 5.22 },
-    10: { 2: 3.15, 3: 3.88, 4: 4.33, 5: 4.65 },
-    20: { 2: 2.95, 3: 3.58, 4: 3.96, 5: 4.23 },
-    30: { 2: 2.89, 3: 3.49, 4: 3.85, 5: 4.10 },
-    60: { 2: 2.83, 3: 3.4, 4: 3.74, 5: 3.98 },
-    120: { 2: 2.80, 3: 3.36, 4: 3.68, 5: 3.92 },
+    5: { 2: 3.64, 3: 4.6, 4: 5.22, 5: 5.67, 6: 6.03 },
+    10: { 2: 3.15, 3: 3.88, 4: 4.33, 5: 4.65, 6: 4.91 },
+    20: { 2: 2.95, 3: 3.58, 4: 3.96, 5: 4.23, 6: 4.45 },
+    30: { 2: 2.89, 3: 3.49, 4: 3.85, 5: 4.10, 6: 4.30 },
+    60: { 2: 2.83, 3: 3.4, 4: 3.74, 5: 3.98, 6: 4.16 },
+    120: { 2: 2.80, 3: 3.36, 4: 3.68, 5: 3.92, 6: 4.10 },
 };
 
 function getQValue(df: number, k: number): number {
     const dfs = Object.keys(Q_TABLE_05).map(Number).sort((a,b) => a - b);
     const closestDf = dfs.reduce((prev, curr) => Math.abs(curr - df) < Math.abs(prev - df) ? curr : prev);
-    const ks = Object.keys(Q_TABLE_05[closestDf]).map(Number).sort((a,b) => a-b);
+    
+    const groupKs = Q_TABLE_05[closestDf];
+    const ks = Object.keys(groupKs).map(Number).sort((a,b) => a-b);
+    
+    if (k > ks[ks.length -1]) return groupKs[ks[ks.length - 1]];
+
     const closestK = ks.reduce((prev, curr) => Math.abs(curr - k) < Math.abs(prev - k) ? curr : prev);
-    return Q_TABLE_05[closestDf][closestK] || 3.5; // fallback
+
+    return groupKs[closestK] || 3.5; // fallback
 }
 
 function performTukeyHSD(groups: { name: string; mean: number; sd: number; samples: number; }[]): {
@@ -189,6 +195,8 @@ function performTukeyHSD(groups: { name: string; mean: number; sd: number; sampl
 
     const totalSamples = groups.reduce((sum, g) => sum + g.samples, 0);
     const dfWithin = totalSamples - k;
+    if (dfWithin <= 0) throw new Error("Not enough degrees of freedom for Tukey's test.");
+
 
     const variances = groups.map(g => g.sd * g.sd);
     const msw = groups.reduce((sum, g, i) => sum + (g.samples - 1) * variances[i], 0) / dfWithin;
@@ -196,22 +204,29 @@ function performTukeyHSD(groups: { name: string; mean: number; sd: number; sampl
     if (msw <= 0) throw new Error("Cannot perform Tukey HSD test with zero variance within groups.");
 
     const qValue = getQValue(dfWithin, k);
-    const hsd = qValue * Math.sqrt(msw / groups[0].samples); // Assumes equal sample sizes, a simplification
-
+    
     const results = [];
     for (let i = 0; i < k; i++) {
         for (let j = i + 1; j < k; j++) {
-            const diff = Math.abs(groups[i].mean - groups[j].mean);
+            const group1 = groups[i];
+            const group2 = groups[j];
+            // For Tukey-Kramer, the critical difference is calculated for each pair
+            const hsd = qValue * Math.sqrt(msw / 2 * (1/group1.samples + 1/group2.samples));
+            const diff = Math.abs(group1.mean - group2.mean);
             results.push({
-                group1: groups[i].name,
-                group2: groups[j].name,
+                group1: group1.name,
+                group2: group2.name,
                 diff: diff,
                 significant: diff > hsd,
             });
         }
     }
 
-    return { results, hsd };
+    // For reporting, we can return an "average" HSD, but the significance is pair-specific
+    const representativeN = groups[0].samples;
+    const representativeHsd = qValue * Math.sqrt(msw / representativeN);
+
+    return { results, hsd: representativeHsd };
 }
 
 export type AnalysisResult = {
@@ -370,8 +385,7 @@ export type StatisticalTestResult = {
 };
 
 export type StatisticalTestRunner = {
-    group1?: string;
-    group2?: string;
+    selectedGroups: string[];
     allGroups: { name: string; mean: number; sd: number; samples: number; }[];
     test: string;
 }
@@ -381,26 +395,35 @@ export async function performStatisticalTest(
 ): Promise<StatisticalTestResult> {
     try {
         let result: StatisticalTestResult = {};
+        const groupsForTest = values.allGroups.filter(g => values.selectedGroups.includes(g.name));
+
+        if (groupsForTest.length < 2) {
+          throw new Error("Please select at least two groups for the test.");
+        }
         
         switch(values.test) {
             case 't-test': {
-                if (!values.group1 || !values.group2) {
-                    throw new Error("T-test requires two groups to be selected.");
+                if (groupsForTest.length !== 2) {
+                    throw new Error("T-test requires exactly two groups to be selected.");
                 }
-                const group1 = values.allGroups.find(g => g.name === values.group1);
-                const group2 = values.allGroups.find(g => g.name === values.group2);
-                if (!group1 || !group2) throw new Error("Could not find the specified groups for t-test.");
+                const [group1, group2] = groupsForTest;
                 const { pValue } = performTTest(group1, group2);
                 result = { pValue };
                 break;
             }
             case 'one-way-anova': {
-                const { pValue, fValue } = performAnova(values.allGroups);
+                if (groupsForTest.length < 2) {
+                    throw new Error("ANOVA requires at least two groups.");
+                }
+                const { pValue, fValue } = performAnova(groupsForTest);
                 result = { pValue, fValue };
                 break;
             }
-            case 'tukey-test': {
-                const tukeyResults = performTukeyHSD(values.allGroups);
+            case 'tukey-kramer': {
+                 if (groupsForTest.length < 2) {
+                    throw new Error("Tukey-Kramer test requires at least two groups.");
+                }
+                const tukeyResults = performTukeyHSD(groupsForTest);
                 result = { tukeyResults };
                 break;
             }
