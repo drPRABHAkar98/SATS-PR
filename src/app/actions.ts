@@ -93,6 +93,126 @@ function performTTest(group1: { mean: number; sd: number; samples: number; }, gr
     return { pValue };
 }
 
+// Simplified incomplete gamma function for F-dist p-value
+function incompleteGamma(s: number, z: number): number {
+    if (z < 0) return 0;
+    const SC_gln = Math.log(gamma(s));
+    let sum = 1 / s;
+    let term = 1 / s;
+    for (let k = 1; k < 100; k++) {
+        term *= z / (s + k);
+        sum += term;
+    }
+    return Math.exp(-z + s * Math.log(z) - SC_gln) * sum;
+}
+
+// Simplified gamma function
+function gamma(n: number): number {
+    if (n === 1) return 1;
+    if (n === 0.5) return Math.sqrt(Math.PI);
+    return (n - 1) * gamma(n - 1);
+}
+
+// Simplified F-distribution CDF to calculate p-value
+function fCdf(f: number, df1: number, df2: number): number {
+    if (f <= 0 || df1 <= 0 || df2 <= 0) return 0;
+    const x = (df1 * f) / (df1 * f + df2);
+    // This is a simplified call to a regularized incomplete beta function,
+    // which is itself complex. Using a simplified approximation.
+    // A proper stats library would have a direct implementation.
+    const betainc = (x: number, a: number, b: number) => {
+         // Using a simple approximation. This has limitations.
+        if (x > (a + 1) / (a + b + 2)) {
+            return 1 - betainc(1 - x, b, a);
+        }
+        const lbeta = Math.log(gamma(a)) + Math.log(gamma(b)) - Math.log(gamma(a+b));
+        return Math.exp(a * Math.log(x) + b * Math.log(1 - x) - lbeta) / a;
+    }
+    return betainc(x, df1 / 2, df2 / 2);
+}
+
+function performAnova(groups: { name: string; mean: number; sd: number; samples: number; }[]): { pValue: number, fValue: number } {
+    const k = groups.length;
+    if (k < 2) throw new Error("ANOVA requires at least 2 groups.");
+
+    const groupData = groups.map(g => {
+        // Generate raw data from mean, sd, and n
+        const data = Array.from({ length: g.samples }, () => generateNormalRandom(g.mean, g.sd));
+        return { ...g, data, variance: g.sd * g.sd };
+    });
+
+    const grandMean = groupData.flatMap(g => g.data).reduce((acc, v) => acc + v, 0) / groupData.reduce((acc, g) => acc + g.samples, 0);
+
+    const ssb = groupData.reduce((acc, g) => acc + g.samples * Math.pow(g.mean - grandMean, 2), 0);
+    const dfb = k - 1;
+    const msb = ssb / dfb;
+
+    const ssw = groupData.reduce((acc, g) => acc + (g.samples - 1) * g.variance, 0);
+    const dfw = groupData.reduce((acc, g) => acc + g.samples, 0) - k;
+    const msw = ssw / dfw;
+    
+    if (msw === 0) return { pValue: dfb > 0 ? 0 : 1, fValue: Infinity }; // Prevent division by zero
+
+    const fValue = msb / msw;
+
+    // A simple p-value from F-distribution approximation
+    const pValue = 1 - fCdf(fValue, dfb, dfw);
+
+    return { pValue, fValue };
+}
+
+// q-value table for Tukey HSD (alpha=0.05). Simplified.
+const Q_TABLE_05: { [df: number]: { [k: number]: number } } = {
+    // df_within: { num_groups: q_value }
+    5: { 2: 3.64, 3: 4.6, 4: 5.22 },
+    10: { 2: 3.15, 3: 3.88, 4: 4.33, 5: 4.65 },
+    20: { 2: 2.95, 3: 3.58, 4: 3.96, 5: 4.23 },
+    30: { 2: 2.89, 3: 3.49, 4: 3.85, 5: 4.10 },
+    60: { 2: 2.83, 3: 3.4, 4: 3.74, 5: 3.98 },
+    120: { 2: 2.80, 3: 3.36, 4: 3.68, 5: 3.92 },
+};
+
+function getQValue(df: number, k: number): number {
+    const dfs = Object.keys(Q_TABLE_05).map(Number).sort((a,b) => a - b);
+    const closestDf = dfs.reduce((prev, curr) => Math.abs(curr - df) < Math.abs(prev - df) ? curr : prev);
+    const ks = Object.keys(Q_TABLE_05[closestDf]).map(Number).sort((a,b) => a-b);
+    const closestK = ks.reduce((prev, curr) => Math.abs(curr - k) < Math.abs(prev - k) ? curr : prev);
+    return Q_TABLE_05[closestDf][closestK] || 3.5; // fallback
+}
+
+function performTukeyHSD(groups: { name: string; mean: number; sd: number; samples: number; }[]): {
+    results: { group1: string, group2: string, diff: number, significant: boolean }[],
+    hsd: number
+} {
+    const k = groups.length;
+    if (k < 2) throw new Error("Tukey's test requires at least 2 groups.");
+
+    const totalSamples = groups.reduce((sum, g) => sum + g.samples, 0);
+    const dfWithin = totalSamples - k;
+
+    const variances = groups.map(g => g.sd * g.sd);
+    const msw = groups.reduce((sum, g, i) => sum + (g.samples - 1) * variances[i], 0) / dfWithin;
+
+    if (msw <= 0) throw new Error("Cannot perform Tukey HSD test with zero variance within groups.");
+
+    const qValue = getQValue(dfWithin, k);
+    const hsd = qValue * Math.sqrt(msw / groups[0].samples); // Assumes equal sample sizes, a simplification
+
+    const results = [];
+    for (let i = 0; i < k; i++) {
+        for (let j = i + 1; j < k; j++) {
+            const diff = Math.abs(groups[i].mean - groups[j].mean);
+            results.push({
+                group1: groups[i].name,
+                group2: groups[j].name,
+                diff: diff,
+                significant: diff > hsd,
+            });
+        }
+    }
+
+    return { results, hsd };
+}
 
 export type AnalysisResult = {
   standardCurve: {
@@ -145,12 +265,15 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
     const totalSumOfSquaresSST = updatedPoints.reduce((sum, p) => sum + Math.pow(p.absorbance - yMean, 2), 0);
 
     if (totalSumOfSquaresSST === 0) {
-         throw new Error("Cannot adjust R² because all absorbance values are identical. There is no variance.");
+         // This can happen if all points are already on a perfect horizontal line.
+         // In this case, we can't introduce variance to meet a lower R2, so we return the perfect line.
+         return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
     }
 
     const numMiddlePoints = updatedPoints.length - 2;
     if (numMiddlePoints <= 0) {
-        throw new Error("Not enough middle points to adjust for R². You need at least 3 points total.");
+        // Not enough points to add noise to.
+        return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
     }
 
     // R^2 = 1 - (SSE / SST) => SSE = SST * (1 - R^2)
@@ -238,12 +361,18 @@ export async function runAnalysis(
 }
 
 export type StatisticalTestResult = {
-  pValue: number;
+  pValue?: number;
+  fValue?: number;
+  tukeyResults?: {
+    results: { group1: string; group2: string; diff: number, significant: boolean }[],
+    hsd: number
+  };
 };
 
 export type StatisticalTestRunner = {
-    group1: { name: string; mean: number; sd: number; samples: number };
-    group2: { name:string; mean: number; sd: number; samples: number };
+    group1?: string;
+    group2?: string;
+    allGroups: { name: string; mean: number; sd: number; samples: number; }[];
     test: string;
 }
 
@@ -251,22 +380,39 @@ export async function performStatisticalTest(
   values: StatisticalTestRunner
 ): Promise<StatisticalTestResult> {
     try {
-        let result: { pValue: number };
+        let result: StatisticalTestResult = {};
+        
         switch(values.test) {
-            case 't-test':
-                result = performTTest(values.group1, values.group2);
+            case 't-test': {
+                if (!values.group1 || !values.group2) {
+                    throw new Error("T-test requires two groups to be selected.");
+                }
+                const group1 = values.allGroups.find(g => g.name === values.group1);
+                const group2 = values.allGroups.find(g => g.name === values.group2);
+                if (!group1 || !group2) throw new Error("Could not find the specified groups for t-test.");
+                const { pValue } = performTTest(group1, group2);
+                result = { pValue };
                 break;
+            }
+            case 'one-way-anova': {
+                const { pValue, fValue } = performAnova(values.allGroups);
+                result = { pValue, fValue };
+                break;
+            }
+            case 'tukey-test': {
+                const tukeyResults = performTukeyHSD(values.allGroups);
+                result = { tukeyResults };
+                break;
+            }
             default:
                 throw new Error(`Unknown or unimplemented statistical test: ${values.test}`);
         }
         
-        if (isNaN(result.pValue)) {
-            throw new Error("Calculation resulted in NaN. Check input data, especially sample sizes and standard deviations.");
+        if (result.pValue !== undefined && isNaN(result.pValue)) {
+            throw new Error("Calculation resulted in NaN p-value. Check input data.");
         }
 
-        return {
-            pValue: result.pValue,
-        };
+        return result;
     } catch (error) {
         console.error("Statistical test failed:", error);
         if (error instanceof Error) {
@@ -275,5 +421,3 @@ export async function performStatisticalTest(
         throw new Error('An unknown error occurred during the statistical test.');
     }
 }
-
-    

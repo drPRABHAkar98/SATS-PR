@@ -18,8 +18,8 @@ export const standardPointSchema = z.object({
 export type StandardPoint = z.infer<typeof standardPointSchema>;
 
 export const statisticalTestSchema = z.object({
-  group1: z.string().min(1, "Please select a group."),
-  group2: z.string().min(1, "Please select a group."),
+  group1: z.string().optional(),
+  group2: z.string().optional(),
   test: z.string().min(1, "Please select a test."),
   significanceLevel: z.string().min(1, "Please select a level."),
 });
