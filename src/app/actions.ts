@@ -124,49 +124,49 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
     if (targetR2 !== undefined && (targetR2 > 1 || targetR2 < 0)) {
         throw new Error("Target R² must be between 0 and 1.");
     }
-
-    // Create a deep copy to avoid modifying the original points array directly
-    let updatedPoints = points.map(p => ({...p}));
+     let updatedPoints = points.map(p => ({...p}));
 
     const slope = (lastPoint.absorbance - firstPoint.absorbance) / (lastPoint.concentration - firstPoint.concentration);
-    
-    // Step 1: Calculate the ideal linear absorbance values for all points
+
+    // Step 1: Calculate the ideal linear absorbance values for all points (the line of best fit)
     updatedPoints = updatedPoints.map(point => {
         const idealAbsorbance = firstPoint.absorbance + slope * (point.concentration - firstPoint.concentration);
         return { ...point, absorbance: idealAbsorbance };
     });
 
-    if (targetR2 === undefined || targetR2 >= 1) { // If no target R2 or target is 1, return the perfect line
+    // If no target R2 or target is 1, return the perfect line
+    if (targetR2 === undefined || targetR2 >= 0.9999) { 
         return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
-    } 
+    }
     
-    // Step 2: Calculate the required Sum of Squared Errors (SSE) for the target R²
+    // Step 2: Calculate the required standard deviation of the residuals (errors)
+    // to achieve the target R-squared.
     const yMean = updatedPoints.reduce((sum, p) => sum + p.absorbance, 0) / updatedPoints.length;
     const totalSumOfSquaresSST = updatedPoints.reduce((sum, p) => sum + Math.pow(p.absorbance - yMean, 2), 0);
 
     if (totalSumOfSquaresSST === 0) {
-         // This means all points are already on a horizontal line.
-         // If targetR2 is not 1 (or undefined), it's impossible to achieve without variance.
-         // We can introduce a tiny bit of variance to proceed, or throw an error.
-         // For now, we'll throw an error as it's an edge case.
          throw new Error("Cannot adjust R² because all absorbance values are identical. There is no variance.");
     }
 
-    const targetSSE = totalSumOfSquaresSST * (1 - targetR2);
-    
-    // Step 3: Distribute this error among the middle points
     const numMiddlePoints = updatedPoints.length - 2;
     if (numMiddlePoints <= 0) {
         throw new Error("Not enough middle points to adjust for R². You need at least 3 points total.");
     }
 
-    const errorPerPoint = Math.sqrt(targetSSE / numMiddlePoints);
+    // R^2 = 1 - (SSE / SST) => SSE = SST * (1 - R^2)
+    const targetSSE = totalSumOfSquaresSST * (1 - targetR2);
+    
+    // The variance of the residuals is SSE / (n-2) for linear regression.
+    // The standard deviation is the square root of the variance.
+    // We use numMiddlePoints because we only add noise to them.
+    const stdDevOfResiduals = Math.sqrt(targetSSE / numMiddlePoints);
 
+    // Step 3: Add normally distributed noise to the middle points
     for (let i = 1; i < updatedPoints.length - 1; i++) {
-        // Distribute error in an alternating pattern to reduce bias
-        const noiseDirection = (i % 2 === 0) ? 1 : -1;
-        const noise = errorPerPoint * noiseDirection;
-        updatedPoints[i].absorbance += noise;
+        const idealAbsorbance = updatedPoints[i].absorbance;
+        // Generate noise with a mean of 0 and the calculated standard deviation
+        const noise = generateNormalRandom(0, stdDevOfResiduals);
+        updatedPoints[i].absorbance = idealAbsorbance + noise;
     }
     
     // Step 4: Final pass to ensure monotonicity and format numbers
@@ -174,9 +174,9 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
         const prevAbsorbance = updatedPoints[i - 1].absorbance;
         // Enforce the trend (increasing or decreasing) dictated by the slope
         if (slope > 0 && updatedPoints[i].absorbance < prevAbsorbance) {
-            updatedPoints[i].absorbance = prevAbsorbance + Math.random() * 0.0001; // Add tiny positive jitter
+            updatedPoints[i].absorbance = prevAbsorbance + Math.random() * 0.001; // Add tiny positive jitter
         } else if (slope < 0 && updatedPoints[i].absorbance > prevAbsorbance) {
-            updatedPoints[i].absorbance = prevAbsorbance - Math.random() * 0.0001; // Add tiny negative jitter
+            updatedPoints[i].absorbance = prevAbsorbance - Math.random() * 0.001; // Add tiny negative jitter
         }
     }
     
