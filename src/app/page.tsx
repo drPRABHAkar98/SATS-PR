@@ -99,6 +99,17 @@ const Plate = ({
   const rows = Array.from({ length: 8 }, (_, i) => String.fromCharCode(65 + i)); // A-H
   const cols = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
 
+  const colorClasses: { [key: string]: string } = {
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    red: "bg-red-500",
+    yellow: "bg-yellow-500",
+    purple: "bg-purple-500",
+    pink: "bg-pink-500",
+  };
+  const selectedColorClass = colorClasses[groupColor] || "bg-primary";
+
+
   return (
     <div className="grid grid-cols-12 gap-1">
       {rows.map(row => (
@@ -114,7 +125,7 @@ const Plate = ({
               disabled={isOtherSelected}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-sm border text-xs transition-colors",
-                isSelected && `bg-${groupColor}-500 text-white`,
+                isSelected && `${selectedColorClass} text-white`,
                 isOtherSelected && "cursor-not-allowed bg-muted opacity-50",
                 !isSelected && !isOtherSelected && "hover:bg-accent"
               )}
@@ -464,6 +475,14 @@ export default function Home() {
 
   const allSelectedWells = watchedGroups.flatMap(g => g.wellSelection || []);
   const groupColors = ["blue", "green", "red", "yellow", "purple", "pink"];
+  const colorClasses: { [key: string]: string } = {
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    red: "bg-red-500",
+    yellow: "bg-yellow-500",
+    purple: "bg-purple-500",
+    pink: "bg-pink-500",
+  };
 
 
   return (
@@ -597,7 +616,7 @@ export default function Home() {
                             <div className="flex items-center">
                               <AccordionTrigger className="flex-1 pr-2">
                                 <div className="flex items-center gap-2">
-                                  <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[index % groupColors.length]}-500`)} />
+                                  <div className={cn("h-3 w-3 rounded-full", colorClasses[groupColors[index % groupColors.length]])} />
                                   {groupName || `(Group ${index + 1})`}
                                 </div>
                               </AccordionTrigger>
@@ -1082,7 +1101,7 @@ export default function Home() {
                   {analysisResult.groupResults.map((group, groupIndex) => (
                     <div key={group.groupName}>
                        <div className="flex items-center gap-2">
-                          <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[groupIndex % groupColors.length]}-500`)} />
+                          <div className={cn("h-3 w-3 rounded-full", colorClasses[groupColors[groupIndex % groupColors.length]])} />
                           <h4 className="font-semibold text-foreground">{group.groupName}</h4>
                        </div>
                       <div className="mt-2 overflow-x-auto rounded-lg border">
@@ -1163,7 +1182,7 @@ export default function Home() {
                       return (
                         <div key={group.groupName} className="space-y-4">
                             <div className="flex items-center gap-2">
-                              <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[groupIndex % groupColors.length]}-500`)} />
+                              <div className={cn("h-3 w-3 rounded-full", colorClasses[groupColors[groupIndex % groupColors.length]])} />
                               <h3 className="font-headline text-lg font-semibold text-foreground">{group.groupName}</h3>
                             </div>
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
