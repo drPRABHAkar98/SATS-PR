@@ -64,6 +64,7 @@ import { calculateLinearRegression } from "@/lib/analysis";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Helper function to calculate standard deviation
 const calculateSD = (data: number[]): number => {
@@ -541,25 +542,27 @@ export default function Home() {
                     <DialogHeader>
                         <DialogTitle className="font-headline text-2xl">How to Use TraceBack Analytics</DialogTitle>
                     </DialogHeader>
-                    <div className="prose prose-sm max-w-none text-foreground">
-                        <p>This tool is designed to reverse-calculate, or "trace back," the raw absorbance values you would expect to see in an assay, based on a final mean concentration.</p>
-                        
-                        <h4 className="font-headline text-lg">Workflow Overview</h4>
-                        <ol className="list-decimal pl-5 space-y-2">
-                            <li><strong>Group Data:</strong> Enter the final, published mean concentration and standard deviation for each of your experimental groups (e.g., Control, Treated).</li>
-                            <li><strong>Forward Calculation Steps:</strong> Define any mathematical steps used to get from the initial concentration (read from the standard curve) to the final concentration. This is crucial for accounting for dilution factors. For example, if your sample was diluted 10-fold, you would add a "Multiply by 10" step.</li>
-                            <li><strong>Standard Curve Data:</strong> This is the most important step.
-                                <ul className="list-disc pl-5 mt-2 space-y-1">
-                                    <li>Use the <strong>"Auto-fill Absorbance"</strong> feature to generate a set of sample data points with a desired R² value.</li>
-                                    <li><strong>CRITICAL:</strong> Copy these generated `Std. Conc.` and `Absorbance` values and paste them into a spreadsheet program (like Excel or Google Sheets).</li>
-                                    <li>Create a scatter plot, add a linear trendline, and display the equation on the chart.</li>
-                                    <li>Take the <strong>slope (m)</strong> and <strong>y-intercept (c)</strong> from the equation in your spreadsheet and enter them into the <strong>"Manual Curve Equation"</strong> section below. This ensures the TraceBack analysis uses a precise, externally validated equation.</li>
-                                </ul>
-                            </li>
-                            <li><strong>Run TraceBack Analysis:</strong> Click the button to perform the reverse calculation. The app will use your manual equation to work backward from your final mean, through the reverse of your forward steps, to generate the expected raw absorbance data.</li>
-                            <li><strong>Review Results:</strong> The app will display the generated raw and true absorbance values for each sample. It also provides a "Forward Test" to validate that the generated absorbances, when put through the standard curve and forward steps, recalculate back to your original input mean.</li>
-                        </ol>
-                    </div>
+                    <ScrollArea className="h-[70vh] pr-6">
+                        <div className="prose prose-sm max-w-none text-foreground">
+                            <p>This tool is designed to reverse-calculate, or "trace back," the raw absorbance values you would expect to see in an assay, based on a final mean concentration.</p>
+                            
+                            <h4 className="font-headline text-lg">Workflow Overview</h4>
+                            <ol className="list-decimal pl-5 space-y-2">
+                                <li><strong>Group Data:</strong> Enter the final, published mean concentration and standard deviation for each of your experimental groups (e.g., Control, Treated).</li>
+                                <li><strong>Forward Calculation Steps:</strong> Define any mathematical steps used to get from the initial concentration (read from the standard curve) to the final concentration. This is crucial for accounting for dilution factors. For example, if your sample was diluted 10-fold, you would add a "Multiply by 10" step.</li>
+                                <li><strong>Standard Curve Data:</strong> This is the most important step.
+                                    <ul className="list-disc pl-5 mt-2 space-y-1">
+                                        <li>Use the <strong>"Auto-fill Absorbance"</strong> feature to generate a set of sample data points with a desired R² value.</li>
+                                        <li><strong>CRITICAL:</strong> Copy these generated `Std. Conc.` and `Absorbance` values and paste them into a spreadsheet program (like Excel or Google Sheets).</li>
+                                        <li>Create a scatter plot, add a linear trendline, and display the equation on the chart.</li>
+                                        <li>Take the <strong>slope (m)</strong> and <strong>y-intercept (c)</strong> from the equation in your spreadsheet and enter them into the <strong>"Manual Curve Equation"</strong> section below. This ensures the TraceBack analysis uses a precise, externally validated equation.</li>
+                                    </ul>
+                                </li>
+                                <li><strong>Run TraceBack Analysis:</strong> Click the button to perform the reverse calculation. The app will use your manual equation to work backward from your final mean, through the reverse of your forward steps, to generate the expected raw absorbance data.</li>
+                                <li><strong>Review Results:</strong> The app will display the generated raw and true absorbance values for each sample. It also provides a "Forward Test" to validate that the generated absorbances, when put through the standard curve and forward steps, recalculate back to your original input mean.</li>
+                            </ol>
+                        </div>
+                    </ScrollArea>
                 </DialogContent>
             </Dialog>
         </div>
@@ -1326,3 +1329,5 @@ export default function Home() {
     
 
       
+
+    
