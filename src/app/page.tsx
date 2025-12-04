@@ -24,7 +24,8 @@ import {
   ChevronUp,
   ChevronDown,
   ArrowRight,
-  Grid3x3
+  Grid3x3,
+  HelpCircle
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -522,11 +523,45 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 w-full border-b bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto flex h-16 items-center gap-4 px-4 md:px-6">
-          <FlaskConical className="h-8 w-8 text-primary" />
-          <h1 className="font-headline text-xl font-bold tracking-tight text-foreground md:text-2xl">
-            TraceBack Analytics <span className="text-sm font-normal text-muted-foreground">by prabha</span>
-          </h1>
+        <div className="container mx-auto flex h-16 items-center justify-between gap-4 px-4 md:px-6">
+            <div className="flex items-center gap-4">
+              <FlaskConical className="h-8 w-8 text-primary" />
+              <h1 className="font-headline text-xl font-bold tracking-tight text-foreground md:text-2xl">
+                TraceBack Analytics <span className="text-sm font-normal text-muted-foreground">by prabha</span>
+              </h1>
+            </div>
+             <Dialog>
+                <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                        <HelpCircle className="mr-2 h-4 w-4" />
+                        How to Use
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="font-headline text-2xl">How to Use TraceBack Analytics</DialogTitle>
+                    </DialogHeader>
+                    <div className="prose prose-sm max-w-none text-foreground">
+                        <p>This tool is designed to reverse-calculate, or "trace back," the raw absorbance values you would expect to see in an assay, based on a final mean concentration.</p>
+                        
+                        <h4 className="font-headline text-lg">Workflow Overview</h4>
+                        <ol className="list-decimal pl-5 space-y-2">
+                            <li><strong>Group Data:</strong> Enter the final, published mean concentration and standard deviation for each of your experimental groups (e.g., Control, Treated).</li>
+                            <li><strong>Forward Calculation Steps:</strong> Define any mathematical steps used to get from the initial concentration (read from the standard curve) to the final concentration. This is crucial for accounting for dilution factors. For example, if your sample was diluted 10-fold, you would add a "Multiply by 10" step.</li>
+                            <li><strong>Standard Curve Data:</strong> This is the most important step.
+                                <ul className="list-disc pl-5 mt-2 space-y-1">
+                                    <li>Use the <strong>"Auto-fill Absorbance"</strong> feature to generate a set of sample data points with a desired R² value.</li>
+                                    <li><strong>CRITICAL:</strong> Copy these generated `Std. Conc.` and `Absorbance` values and paste them into a spreadsheet program (like Excel or Google Sheets).</li>
+                                    <li>Create a scatter plot, add a linear trendline, and display the equation on the chart.</li>
+                                    <li>Take the <strong>slope (m)</strong> and <strong>y-intercept (c)</strong> from the equation in your spreadsheet and enter them into the <strong>"Manual Curve Equation"</strong> section below. This ensures the TraceBack analysis uses a precise, externally validated equation.</li>
+                                </ul>
+                            </li>
+                            <li><strong>Run TraceBack Analysis:</strong> Click the button to perform the reverse calculation. The app will use your manual equation to work backward from your final mean, through the reverse of your forward steps, to generate the expected raw absorbance data.</li>
+                            <li><strong>Review Results:</strong> The app will display the generated raw and true absorbance values for each sample. It also provides a "Forward Test" to validate that the generated absorbances, when put through the standard curve and forward steps, recalculate back to your original input mean.</li>
+                        </ol>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
       </header>
 
@@ -880,7 +915,7 @@ export default function Home() {
                           3. Standard Curve Data
                         </CardTitle>
                         <CardDescription>
-                          This is sample data. Adjust points or use Auto-fill, then get the equation from Excel and enter it below.
+                          Use Auto-fill to generate data, then get the equation from Excel and enter it in the "Manual Curve Equation" section below.
                         </CardDescription>
                       </div>
                     </div>
