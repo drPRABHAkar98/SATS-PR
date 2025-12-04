@@ -121,6 +121,9 @@ export default function Home() {
     control: form.control,
     name: "standardCurve",
   });
+  
+  const watchedBlankAbsorbance = form.watch('blankAbsorbance');
+  const watchedStandardCurve = form.watch('standardCurve');
 
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
@@ -590,10 +593,13 @@ export default function Home() {
                     </div>
 
                     <div className="max-h-60 space-y-2 overflow-y-auto pr-2">
-                      {standardCurveFields.map((field, index) => (
+                      {standardCurveFields.map((field, index) => {
+                        const rawAbsorbance = watchedStandardCurve[index]?.absorbance ?? 0;
+                        const trueAbsorbance = rawAbsorbance - (watchedBlankAbsorbance ?? 0);
+                        return (
                         <div
                           key={field.id}
-                          className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"
+                          className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2"
                         >
                           <FormField
                             control={form.control}
@@ -621,6 +627,18 @@ export default function Home() {
                               </FormItem>
                             )}
                           />
+                          <FormItem>
+                              {index === 0 && <FormLabel>True Abs.</FormLabel>}
+                              <FormControl>
+                                  <Input 
+                                      type="number" 
+                                      value={trueAbsorbance.toFixed(4)} 
+                                      readOnly 
+                                      disabled 
+                                      className="bg-muted/70"
+                                  />
+                              </FormControl>
+                          </FormItem>
                           <Button
                             type="button"
                             variant="ghost"
@@ -632,7 +650,7 @@ export default function Home() {
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
-                      ))}
+                      )})}
                     </div>
                      <div className="flex flex-col gap-2 sm:flex-row">
                       <Button
