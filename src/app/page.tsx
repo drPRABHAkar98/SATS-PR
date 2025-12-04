@@ -732,6 +732,7 @@ export default function Home() {
                                         step="any"
                                         placeholder="e.g., 0.0188"
                                         {...field}
+                                        value={field.value ?? ''}
                                         />
                                     </FormControl>
                                     <FormMessage />
@@ -750,6 +751,7 @@ export default function Home() {
                                         step="any"
                                         placeholder="e.g., 0.05"
                                         {...field}
+                                        value={field.value ?? ''}
                                         />
                                     </FormControl>
                                     <FormMessage />
