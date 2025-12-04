@@ -23,6 +23,7 @@ import {
   BookUser,
   ChevronUp,
   ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { AnalysisResult } from "./actions";
 import { runAnalysis, adjustRsquared } from "./actions";
@@ -66,6 +68,18 @@ const calculateSD = (data: number[]): number => {
     const mean = data.reduce((a, b) => a + b) / n;
     const variance = data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
     return Math.sqrt(variance);
+};
+
+const applyForwardSteps = (value: number, steps: z.infer<typeof formSchema>['forwardSteps']) => {
+  return steps.reduce((currentValue, step) => {
+    switch (step.operation) {
+      case 'add': return currentValue + step.value;
+      case 'subtract': return currentValue - step.value;
+      case 'multiply': return currentValue * step.value;
+      case 'divide': return step.value !== 0 ? currentValue / step.value : currentValue;
+      default: return currentValue;
+    }
+  }, value);
 };
 
 
@@ -89,6 +103,7 @@ export default function Home() {
         { name: "Normal", mean: 0, sd: 0, samples: 3 },
         { name: "Diseased", mean: 0, sd: 0, samples: 3 },
       ],
+      forwardSteps: [],
       standardCurve: [
         { concentration: 0, absorbance: 0.05 },
         { concentration: 10, absorbance: 0.2 },
@@ -111,6 +126,16 @@ export default function Home() {
     control: form.control,
     name: "groups",
   });
+
+  const {
+    fields: forwardStepFields,
+    append: appendForwardStep,
+    remove: removeForwardStep,
+  } = useFieldArray({
+    control: form.control,
+    name: "forwardSteps",
+  });
+
 
   const {
     fields: standardCurveFields,
@@ -249,12 +274,17 @@ export default function Home() {
 
     const { m, c } = analysisResult.standardCurve;
     const blankAbsorbance = form.getValues('blankAbsorbance');
+    const forwardSteps = form.getValues('forwardSteps');
 
     return analysisResult.groupResults.map(group => {
       // Use true absorbance (raw - blank) to calculate concentration
-      const calculatedConcentrations = group.absorbanceValues.map(abs => (abs - blankAbsorbance - c) / m);
-      const concentrationMean = calculatedConcentrations.reduce((a, b) => a + b, 0) / calculatedConcentrations.length;
-      const concentrationSD = calculateSD(calculatedConcentrations);
+      const extrapolatedConcentrations = group.absorbanceValues.map(abs => (abs - blankAbsorbance - c) / m);
+
+      // Apply forward steps to each sample's extrapolated concentration
+      const finalConcentrations = extrapolatedConcentrations.map(conc => applyForwardSteps(conc, forwardSteps));
+
+      const finalMean = finalConcentrations.reduce((a, b) => a + b, 0) / finalConcentrations.length;
+      const finalSD = calculateSD(finalConcentrations);
 
       return {
         groupName: group.groupName,
@@ -262,10 +292,11 @@ export default function Home() {
             sample: i + 1,
             rawAbsorbance: abs,
             trueAbsorbance: abs - blankAbsorbance,
-            concentration: calculatedConcentrations[i],
+            extrapolatedConcentration: extrapolatedConcentrations[i],
+            finalConcentration: finalConcentrations[i],
         })),
-        concentrationMean,
-        concentrationSD,
+        finalMean,
+        finalSD,
       };
     });
   }, [analysisResult, form]);
@@ -273,7 +304,7 @@ export default function Home() {
   const handleExport = () => {
     if (!analysisResult || !forwardTestResults) return;
   
-    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance } = form.getValues();
+    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance, forwardSteps } = form.getValues();
     const { m: slope, c: intercept } = analysisResult.standardCurve;
   
     let csvData: any[] = [];
@@ -298,9 +329,20 @@ export default function Home() {
     });
     csvData.push([]); // Blank row
   
-    // 3. Group Summary
+    // 3. Forward Calculation Steps
+    if (forwardSteps.length > 0) {
+      csvData.push(["Forward Calculation Steps"]);
+      csvData.push(["Step", "Operation", "Value"]);
+      forwardSteps.forEach((step, index) => {
+        csvData.push([index + 1, step.operation, step.value]);
+      });
+      csvData.push([]);
+    }
+
+
+    // 4. Group Summary
     csvData.push(["Group Summary"]);
-    csvData.push(["Group Name", "Samples (n)", "Initial Mean Conc.", "Initial SD", "TraceBack Mean Conc.", "TraceBack SD"]);
+    csvData.push(["Group Name", "Samples (n)", "Input Final Mean Conc.", "Input Final SD", "Recalculated Final Mean", "Recalculated Final SD"]);
     forwardTestResults.forEach(result => {
         const initialGroup = initialGroups.find(g => g.name === result.groupName);
         if (initialGroup) {
@@ -309,8 +351,8 @@ export default function Home() {
                 initialGroup.samples,
                 initialGroup.mean,
                 initialGroup.sd,
-                result.concentrationMean.toFixed(4),
-                result.concentrationSD.toFixed(4)
+                result.finalMean.toFixed(4),
+                result.finalSD.toFixed(4)
             ]);
         }
     });
@@ -318,14 +360,15 @@ export default function Home() {
   
     // 5. Detailed Sample Data
     csvData.push(["Detailed Sample Data"]);
-    csvData.push(["Group", "Sample", "TraceBack Raw Absorbance", "Calculated Concentration"]);
+    csvData.push(["Group", "Sample", "TraceBack Raw Absorbance", "Extrapolated Concentration", "Final Concentration"]);
     forwardTestResults.forEach(group => {
         group.sampleData.forEach(sample => {
             csvData.push([
                 group.groupName,
                 sample.sample,
                 sample.rawAbsorbance.toFixed(4),
-                sample.concentration.toFixed(4)
+                sample.extrapolatedConcentration.toFixed(4),
+                sample.finalConcentration.toFixed(4)
             ]);
         });
     });
@@ -461,7 +504,7 @@ export default function Home() {
                           1. Group Data
                         </CardTitle>
                         <CardDescription>
-                          Input mean concentration, SD, and sample size for each group.
+                          Input the FINAL mean concentration, SD, and sample size for each group.
                         </CardDescription>
                       </div>
                     </div>
@@ -562,6 +605,88 @@ export default function Home() {
                     </Button>
                   </CardContent>
                 </Card>
+                
+                {/* Forward Calculation Steps */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <ArrowRight className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <CardTitle className="font-headline text-xl">
+                          2. Forward Calculation Steps
+                        </CardTitle>
+                        <CardDescription>
+                          Define steps to get from extrapolated concentration to the final mean (e.g., dilution factor).
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {forwardStepFields.length > 0 && (
+                      <div className="space-y-2">
+                        {forwardStepFields.map((field, index) => (
+                          <div key={field.id} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                             <FormField
+                              control={form.control}
+                              name={`forwardSteps.${index}.operation`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  {index === 0 && <FormLabel>Operation</FormLabel>}
+                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select an operation" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value="multiply">Multiply by</SelectItem>
+                                      <SelectItem value="divide">Divide by</SelectItem>
+                                      <SelectItem value="add">Add</SelectItem>
+                                      <SelectItem value="subtract">Subtract</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`forwardSteps.${index}.value`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  {index === 0 && <FormLabel>Value</FormLabel>}
+                                  <FormControl>
+                                    <Input type="number" step="any" {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeForwardStep(index)}
+                              aria-label="Remove step"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => appendForwardStep({ operation: 'multiply', value: 1 })}
+                      className="w-full"
+                    >
+                      <Plus className="mr-2 h-4 w-4" /> Add Step
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
 
               <div className="space-y-8">
@@ -574,7 +699,7 @@ export default function Home() {
                       </div>
                       <div>
                         <CardTitle className="font-headline text-xl">
-                          2. Standard Curve Data
+                          3. Standard Curve Data
                         </CardTitle>
                         <CardDescription>
                           This is sample data. Adjust points or use Auto-fill, then get the equation from Excel and enter it below.
@@ -809,7 +934,7 @@ export default function Home() {
                   </div>
                   <div>
                     <CardTitle className="font-headline text-xl">
-                      3. TraceBack Analysis Results
+                      4. TraceBack Analysis Results
                     </CardTitle>
                     <CardDescription>
                       Review the calculated standard curve and traced-back absorbance values.
@@ -882,7 +1007,7 @@ export default function Home() {
                       </div>
                       <div>
                         <CardTitle className="font-headline text-xl">
-                          4. Forward Test Results (Validation)
+                          5. Forward Test Results (Validation)
                         </CardTitle>
                         <CardDescription>
                           Concentrations recalculated from absorbance values to verify the model.
@@ -909,14 +1034,14 @@ export default function Home() {
                                     <p className="mt-1 text-2xl font-semibold">
                                         {Number(originalGroup?.mean).toFixed(2)} <span className="text-lg font-medium text-muted-foreground">± {Number(originalGroup?.sd).toFixed(2)}</span>
                                     </p>
-                                    <p className="text-xs text-muted-foreground">Mean Conc. ± SD</p>
+                                    <p className="text-xs text-muted-foreground">Final Mean Conc. ± SD</p>
                                 </div>
                                 <div className="rounded-lg border bg-muted/50 p-4">
                                     <h4 className="text-sm font-medium text-muted-foreground">Forward Test Result</h4>
                                     <p className="mt-1 text-2xl font-semibold">
-                                        {group.concentrationMean.toFixed(2)} <span className="text-lg font-medium text-muted-foreground">± {group.concentrationSD.toFixed(2)}</span>
+                                        {group.finalMean.toFixed(2)} <span className="text-lg font-medium text-muted-foreground">± {group.finalSD.toFixed(2)}</span>
                                     </p>
-                                     <p className="text-xs text-muted-foreground">Recalculated Mean Conc. ± SD</p>
+                                     <p className="text-xs text-muted-foreground">Recalculated Final Mean Conc. ± SD</p>
                                 </div>
                             </div>
                             <div className="overflow-x-auto rounded-lg border">
@@ -926,7 +1051,8 @@ export default function Home() {
                                             <TableHead className="text-center">Sample</TableHead>
                                             <TableHead className="text-center">Raw Absorbance</TableHead>
                                             <TableHead className="text-center">True Absorbance</TableHead>
-                                            <TableHead className="text-center">Recalculated Conc.</TableHead>
+                                            <TableHead className="text-center">Extrapolated Conc.</TableHead>
+                                            <TableHead className="text-center">Final Conc.</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -935,7 +1061,8 @@ export default function Home() {
                                                 <TableCell className="text-center font-medium">{sample.sample}</TableCell>
                                                 <TableCell className="text-center font-mono">{sample.rawAbsorbance.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-muted-foreground">{sample.trueAbsorbance.toFixed(4)}</TableCell>
-                                                <TableCell className="text-center font-mono text-primary">{sample.concentration.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono text-primary">{sample.extrapolatedConcentration.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono text-primary font-bold">{sample.finalConcentration.toFixed(4)}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -953,3 +1080,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

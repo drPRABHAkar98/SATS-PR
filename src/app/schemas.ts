@@ -16,6 +16,11 @@ export const standardPointSchema = z.object({
   absorbance: z.coerce.number({ invalid_type_error: "Must be a number." }).nonnegative(),
 });
 
+export const forwardStepSchema = z.object({
+  operation: z.enum(['add', 'subtract', 'multiply', 'divide']),
+  value: z.coerce.number({invalid_type_error: "Must be a number."}),
+});
+
 export type StandardPoint = z.infer<typeof standardPointSchema>;
 
 export const formSchema = z.object({
@@ -28,9 +33,12 @@ export const formSchema = z.object({
   slope: z.coerce.number({invalid_type_error: "Slope must be a number"}).optional(),
   intercept: z.coerce.number({invalid_type_error: "Intercept must be a number"}).optional(),
   groups: z.array(groupSchema).min(1, "At least one group is required."),
+  forwardSteps: z.array(forwardStepSchema),
   standardCurve: z
     .array(standardPointSchema)
     .min(2, "At least two points are needed for the curve."),
 });
+
+    
 
     

@@ -20,27 +20,56 @@ function generateNormalRandom(mean: number, stdDev: number): number {
     return z * stdDev + mean;
 }
 
+// Reverses the forward calculation steps to find the initial extrapolated concentration
+function applyReverseSteps(finalConcentration: number, steps: z.infer<typeof formSchema>['forwardSteps']): number {
+    // To reverse, we iterate through the steps backwards and apply the inverse operation
+    return [...steps].reverse().reduce((currentValue, step) => {
+        switch (step.operation) {
+            case 'add':
+                return currentValue - step.value;
+            case 'subtract':
+                return currentValue + step.value;
+            case 'multiply':
+                // Avoid division by zero if original value was 0
+                return step.value !== 0 ? currentValue / step.value : currentValue;
+            case 'divide':
+                return currentValue * step.value;
+            default:
+                return currentValue;
+        }
+    }, finalConcentration);
+}
 
 function generateAbsorbanceValues(
-    meanConcentration: number,
-    standardDeviation: number,
+    finalMeanConcentration: number,
+    finalStandardDeviation: number,
     samplesPerGroup: number,
     slope: number,
-    intercept: number
+    intercept: number,
+    forwardSteps: z.infer<typeof formSchema>['forwardSteps']
 ): { absorbanceValues: number[] } {
 
     if (isNaN(slope) || isNaN(intercept)) {
         throw new Error("Could not parse slope or intercept from the standard curve equation.");
     }
 
-    const concentrationValues = [];
+    // First, calculate the mean concentration *before* the forward steps were applied.
+    const extrapolatedMeanConc = applyReverseSteps(finalMeanConcentration, forwardSteps);
+
+    // Assumption: The standard deviation scales proportionally with the mean through the forward steps.
+    // This is a simplification. A more rigorous approach would require more complex stats.
+    // We calculate a scaling factor from the final mean to the extrapolated mean.
+    const sdScalingFactor = finalMeanConcentration !== 0 ? extrapolatedMeanConc / finalMeanConcentration : 1;
+    const extrapolatedSD = finalStandardDeviation * sdScalingFactor;
+
+    const extrapolatedConcValues = [];
     for (let i = 0; i < samplesPerGroup; i++) {
-        // Generate concentration values based on the group's stats
-        const concentration = generateNormalRandom(meanConcentration, standardDeviation);
-        concentrationValues.push(concentration);
+        // Generate concentration values based on the *extrapolated* stats
+        const concentration = generateNormalRandom(extrapolatedMeanConc, extrapolatedSD);
+        extrapolatedConcValues.push(concentration);
     }
 
-    const absorbanceValues = concentrationValues.map(conc => {
+    const absorbanceValues = extrapolatedConcValues.map(conc => {
         // Use the standard curve to find the corresponding absorbance (y = mx + c)
         const absorbance = slope * conc + intercept;
         // Ensure absorbance is not negative
@@ -153,7 +182,7 @@ export async function runAnalysis(
   values: z.infer<typeof formSchema>
 ): Promise<AnalysisResult> {
   try {
-    const { groups, blankAbsorbance, slope, intercept } = values;
+    const { groups, blankAbsorbance, slope, intercept, forwardSteps } = values;
 
     if (slope === undefined || intercept === undefined) {
         throw new Error("Slope and Intercept must be provided for the analysis.");
@@ -169,7 +198,8 @@ export async function runAnalysis(
         group.sd,
         group.samples,
         slope,
-        intercept
+        intercept,
+        forwardSteps
       );
 
       // The generated absorbances are "true" values, so we add the blank back to simulate raw data.
@@ -196,3 +226,5 @@ export async function runAnalysis(
     throw new Error('An unknown error occurred during analysis.');
   }
 }
+
+    
