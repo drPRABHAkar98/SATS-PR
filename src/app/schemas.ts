@@ -25,10 +25,12 @@ export const formSchema = z.object({
   experimentName: z.string().optional(),
   blankAbsorbance: z.coerce.number({invalid_type_error: "Must be a number"}).nonnegative("Cannot be negative"),
   targetR2: z.coerce.number().min(0).max(1).optional().nullable(),
-  slope: z.coerce.number({invalid_type_error: "Slope must be a number"}),
-  intercept: z.coerce.number({invalid_type_error: "Intercept must be a number"}),
+  slope: z.coerce.number({invalid_type_error: "Slope must be a number"}).optional(),
+  intercept: z.coerce.number({invalid_type_error: "Intercept must be a number"}).optional(),
   groups: z.array(groupSchema).min(1, "At least one group is required."),
   standardCurve: z
     .array(standardPointSchema)
     .min(2, "At least two points are needed for the curve."),
 });
+
+    

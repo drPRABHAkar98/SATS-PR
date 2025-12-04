@@ -98,8 +98,8 @@ export default function Home() {
       ],
       blankAbsorbance: 0.05,
       targetR2: 0.995,
-      slope: 0.0188,
-      intercept: 0.05,
+      slope: undefined,
+      intercept: undefined,
     },
   });
 
@@ -124,6 +124,30 @@ export default function Home() {
   
   const watchedBlankAbsorbance = form.watch('blankAbsorbance');
   const watchedStandardCurve = form.watch('standardCurve');
+  
+  const [curveDetails, setCurveDetails] = useState({ m: 0, c: 0, rSquare: 0 });
+
+  useEffect(() => {
+    const validPoints = watchedStandardCurve.filter(
+        (p) =>
+        typeof p.concentration === 'number' &&
+        !isNaN(p.concentration) &&
+        typeof p.absorbance === 'number' &&
+        !isNaN(p.absorbance)
+    );
+
+    if (validPoints.length >= 2) {
+      const regression = calculateLinearRegression(
+        validPoints.map(p => ({
+          x: p.concentration,
+          y: p.absorbance - (watchedBlankAbsorbance ?? 0),
+        }))
+      );
+      setCurveDetails(regression);
+    } else {
+      setCurveDetails({ m: 0, c: 0, rSquare: 0 });
+    }
+  }, [watchedStandardCurve, watchedBlankAbsorbance]);
 
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
@@ -177,8 +201,31 @@ export default function Home() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setAnalysisResult(null);
+
+    // If slope/intercept are not provided, use the ones calculated from the curve
+    const finalValues = { ...values };
+    if (finalValues.slope === undefined || finalValues.intercept === undefined || isNaN(finalValues.slope) || isNaN(finalValues.intercept)) {
+      if (curveDetails.m && curveDetails.c) {
+        finalValues.slope = curveDetails.m;
+        finalValues.intercept = curveDetails.c;
+        toast({
+          title: "Using App-Calculated Equation",
+          description: "No manual equation provided. Using the equation calculated from the standard curve points.",
+        });
+      } else {
+         toast({
+          variant: "destructive",
+          title: "Missing Curve Equation",
+          description: "Please provide standard curve points to calculate an equation, or enter one manually.",
+        });
+        setIsLoading(false);
+        return;
+      }
+    }
+
+
     try {
-      const result = await runAnalysis(values);
+      const result = await runAnalysis(finalValues);
       setAnalysisResult(result);
       toast({
         title: "Analysis Complete",
@@ -225,7 +272,8 @@ export default function Home() {
   const handleExport = () => {
     if (!analysisResult || !forwardTestResults) return;
   
-    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance, slope, intercept } = form.getValues();
+    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance } = form.getValues();
+    const { m: slope, c: intercept } = analysisResult.standardCurve;
   
     let csvData: any[] = [];
   
@@ -676,11 +724,18 @@ export default function Home() {
                         )}
                       </Button>
                     </div>
+                     <div className="mt-4 space-y-2 rounded-lg border bg-muted/50 p-4">
+                        <h4 className="font-headline text-md font-semibold">
+                            Curve Details (from True OD)
+                        </h4>
+                        <p className="text-sm">Equation: <span className="font-mono text-primary">{`y = ${curveDetails.m.toFixed(4)}x + ${curveDetails.c.toFixed(4)}`}</span></p>
+                        <p className="text-sm">R² Value: <span className="font-mono text-primary">{curveDetails.rSquare.toFixed(4)}</span></p>
+                    </div>
                      <div className="space-y-4 rounded-lg border bg-muted/50 p-4">
                         <h4 className="font-headline text-md font-semibold">
                             Manual Curve Equation (from Excel)
                         </h4>
-                        <p className="text-xs text-muted-foreground">This equation will be used for the TraceBack analysis.</p>
+                        <p className="text-xs text-muted-foreground">This equation will be used for the TraceBack analysis if provided.</p>
                         <div className="grid grid-cols-2 gap-4">
                            <FormField
                                 control={form.control}
@@ -770,7 +825,7 @@ export default function Home() {
                 </div>
                 
                 <div className="space-y-4">
-                   <h3 className="font-headline text-lg font-semibold">TraceBack Raw Absorbance Values</h3>
+                   <h3 className="font-headline text-lg font-semibold">TraceBack Absorbance Values</h3>
                   {analysisResult.groupResults.map((group) => (
                     <div key={group.groupName}>
                        <h4 className="font-semibold text-foreground">{group.groupName}</h4>
@@ -778,6 +833,7 @@ export default function Home() {
                         <Table>
                           <TableHeader>
                             <TableRow>
+                              <TableHead className="w-32"></TableHead>
                               {group.absorbanceValues.map((_, index) => (
                                 <TableHead key={index} className="text-center">Sample {index + 1}</TableHead>
                               ))}
@@ -785,9 +841,18 @@ export default function Home() {
                           </TableHeader>
                           <TableBody>
                             <TableRow>
+                              <TableCell className="font-medium">Raw Absorbance</TableCell>
                               {group.absorbanceValues.map((value, index) => (
-                                <TableCell key={index} className={cn("text-center font-mono")}>
+                                <TableCell key={index} className="text-center font-mono">
                                   {value.toFixed(4)}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                             <TableRow>
+                              <TableCell className="font-medium">True Absorbance</TableCell>
+                              {group.absorbanceValues.map((value, index) => (
+                                <TableCell key={index} className="text-center font-mono text-primary">
+                                  {(value - form.getValues('blankAbsorbance')).toFixed(4)}
                                 </TableCell>
                               ))}
                             </TableRow>
@@ -883,3 +948,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

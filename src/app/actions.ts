@@ -153,7 +153,7 @@ export async function runAnalysis(
   values: z.infer<typeof formSchema>
 ): Promise<AnalysisResult> {
   try {
-    const { groups, standardCurve, blankAbsorbance, slope, intercept } = values;
+    const { groups, blankAbsorbance, slope, intercept } = values;
 
     if (slope === undefined || intercept === undefined) {
         throw new Error("Slope and Intercept must be provided for the analysis.");
@@ -196,3 +196,5 @@ export async function runAnalysis(
     throw new Error('An unknown error occurred during analysis.');
   }
 }
+
+    
