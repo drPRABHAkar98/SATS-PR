@@ -1,3 +1,4 @@
+
 import * as z from "zod";
 
 export const groupSchema = z.object({
@@ -22,7 +23,8 @@ export const formSchema = z.object({
   units: z.string().optional(),
   date: z.string().optional(),
   experimentName: z.string().optional(),
-  targetR2: z.coerce.number().optional().nullable(),
+  blankAbsorbance: z.coerce.number({invalid_type_error: "Must be a number"}).nonnegative("Cannot be negative"),
+  targetR2: z.coerce.number().min(0).max(1).optional().nullable(),
   groups: z.array(groupSchema).min(1, "At least one group is required."),
   standardCurve: z
     .array(standardPointSchema)

@@ -67,26 +67,30 @@ export type AnalysisResult = {
   }[];
 };
 
-export async function adjustRsquared(points: StandardPoint[], targetR2?: number): Promise<StandardPoint[]> {
+export async function adjustRsquared(points: StandardPoint[], blankAbs: number, targetR2?: number): Promise<StandardPoint[]> {
     if (points.length < 3) {
       throw new Error("You need at least three points to adjust for a target R².");
     }
-    const firstPoint = points[0];
-    const lastPoint = points[points.length - 1];
+    
+    // Use true absorbance (raw - blank) for calculations
+    const truePoints = points.map(p => ({ ...p, absorbance: p.absorbance - blankAbs }));
+
+    const firstPoint = truePoints[0];
+    const lastPoint = truePoints[truePoints.length - 1];
 
     if (firstPoint.concentration === lastPoint.concentration) {
         throw new Error("First and last concentration values cannot be the same.");
     }
     
     if (isNaN(firstPoint.absorbance) || isNaN(lastPoint.absorbance)) {
-       throw new Error("First and last absorbance values must be numbers.");
+       throw new Error("First and last absorbance values must be numbers. Ensure you have set them before auto-filling.");
     }
 
     if (targetR2 !== undefined && (targetR2 > 1 || targetR2 < 0)) {
         throw new Error("Target R² must be between 0 and 1.");
     }
-     let updatedPoints = points.map(p => ({...p}));
-
+    
+    let updatedPoints = truePoints.map(p => ({...p}));
     const slope = (lastPoint.absorbance - firstPoint.absorbance) / (lastPoint.concentration - firstPoint.concentration);
 
     // Step 1: Calculate the ideal linear absorbance values for all points (the line of best fit)
@@ -95,26 +99,28 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
         return { ...point, absorbance: idealAbsorbance };
     });
 
-    // If no target R2 or target is 1, return the perfect line
+    // If no target R2 or target is 1, return the perfect line (plus the blank)
     if (targetR2 === undefined || targetR2 >= 0.9999) { 
-        return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
+        return updatedPoints.map(p => ({
+            ...p, 
+            absorbance: parseFloat((p.absorbance + blankAbs).toFixed(4))
+        }));
     }
     
     // Step 2: Calculate the required standard deviation of the residuals (errors)
-    // to achieve the target R-squared.
     const yMean = updatedPoints.reduce((sum, p) => sum + p.absorbance, 0) / updatedPoints.length;
     const totalSumOfSquaresSST = updatedPoints.reduce((sum, p) => sum + Math.pow(p.absorbance - yMean, 2), 0);
 
     if (totalSumOfSquaresSST === 0) {
          // This can happen if all points are already on a perfect horizontal line.
-         // In this case, we can't introduce variance to meet a lower R2, so we return the perfect line.
-         return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
+         // In this case, we can't introduce variance to meet a lower R2.
+         return updatedPoints.map(p => ({...p, absorbance: parseFloat((p.absorbance + blankAbs).toFixed(4))}));
     }
 
     const numMiddlePoints = updatedPoints.length - 2;
     if (numMiddlePoints <= 0) {
         // Not enough points to add noise to.
-        return updatedPoints.map(p => ({...p, absorbance: parseFloat(p.absorbance.toFixed(4))}));
+        return updatedPoints.map(p => ({...p, absorbance: parseFloat((p.absorbance + blankAbs).toFixed(4))}));
     }
 
     // R^2 = 1 - (SSE / SST) => SSE = SST * (1 - R^2)
@@ -122,13 +128,11 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
     
     // The variance of the residuals is SSE / (n-2) for linear regression.
     // The standard deviation is the square root of the variance.
-    // We use numMiddlePoints because we only add noise to them.
     const stdDevOfResiduals = Math.sqrt(targetSSE / numMiddlePoints);
 
     // Step 3: Add normally distributed noise to the middle points
     for (let i = 1; i < updatedPoints.length - 1; i++) {
         const idealAbsorbance = updatedPoints[i].absorbance;
-        // Generate noise with a mean of 0 and the calculated standard deviation
         const noise = generateNormalRandom(0, stdDevOfResiduals);
         updatedPoints[i].absorbance = idealAbsorbance + noise;
     }
@@ -136,7 +140,6 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
     // Step 4: Final pass to ensure monotonicity and format numbers
     for (let i = 1; i < updatedPoints.length; i++) {
         const prevAbsorbance = updatedPoints[i - 1].absorbance;
-        // Enforce the trend (increasing or decreasing) dictated by the slope
         if (slope > 0 && updatedPoints[i].absorbance < prevAbsorbance) {
             updatedPoints[i].absorbance = prevAbsorbance + Math.random() * 0.001; // Add tiny positive jitter
         } else if (slope < 0 && updatedPoints[i].absorbance > prevAbsorbance) {
@@ -144,28 +147,30 @@ export async function adjustRsquared(points: StandardPoint[], targetR2?: number)
         }
     }
     
-    // Format all to 4 decimal places and ensure no negative values
+    // Format all to 4 decimal places, ensure no negative true OD, and add the blank back
     return updatedPoints.map(p => ({
         ...p,
-        absorbance: parseFloat(Math.max(0, p.absorbance).toFixed(4))
+        absorbance: parseFloat(Math.max(0, p.absorbance + blankAbs).toFixed(4))
     }));
 }
+
 
 export async function runAnalysis(
   values: z.infer<typeof formSchema>
 ): Promise<AnalysisResult> {
   try {
-    const { groups, standardCurve } = values;
+    const { groups, standardCurve, blankAbsorbance } = values;
 
-    // 1. Standard Curve Calculation
-    const points = standardCurve.map(p => ({ x: p.concentration, y: p.absorbance }));
-    const regression = calculateLinearRegression(points);
+    // 1. Standard Curve Calculation using TRUE absorbance values (raw - blank)
+    const truePoints = standardCurve.map(p => ({ x: p.concentration, y: p.absorbance - blankAbsorbance }));
+    const regression = calculateLinearRegression(truePoints);
 
     if (isNaN(regression.m) || isNaN(regression.c)) {
         throw new Error("Could not calculate standard curve. Please check your data points.");
     }
 
     const groupResults = [];
+    // The equation uses the true absorbance values
     const standardCurveEquation = `y = ${regression.m.toFixed(4)}x + ${regression.c.toFixed(4)}`;
 
     // 2. Individual Sample Absorbance Calculation for each group
@@ -178,9 +183,12 @@ export async function runAnalysis(
         standardCurveEquation
       );
 
+      // The generated absorbances are "true" values, so we add the blank back to simulate raw data.
+      const rawAbsorbanceValues = result.absorbanceValues.map(abs => abs + blankAbsorbance);
+
       groupResults.push({
         groupName: group.name,
-        absorbanceValues: result.absorbanceValues,
+        absorbanceValues: rawAbsorbanceValues,
       });
     }
 

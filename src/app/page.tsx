@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   Download,
   BookUser,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -95,12 +97,14 @@ export default function Home() {
         { name: "Diseased", mean: 0, sd: 0, samples: 3 },
       ],
       standardCurve: [
-        { concentration: 0, absorbance: 0 },
+        { concentration: 0, absorbance: 0.05 },
         { concentration: 10, absorbance: 0.2 },
         { concentration: 20, absorbance: 0.4 },
         { concentration: 30, absorbance: 0.6 },
+        { concentration: 40, absorbance: 0.8 },
       ],
-      targetR2: 0.99
+      blankAbsorbance: 0.05,
+      targetR2: 0.995
     },
   });
 
@@ -124,8 +128,9 @@ export default function Home() {
   });
 
   const watchedStandardCurve = form.watch('standardCurve');
+  const watchedBlankAbsorbance = form.watch('blankAbsorbance');
   
-  const updateCurveInfo = (data: {concentration: number, absorbance: number}[]) => {
+  const updateCurveInfo = (data: {concentration: number, absorbance: number}[], blankValue: number) => {
       if (data.length < 2) {
           setStandardCurveInfo(null);
           return;
@@ -137,8 +142,9 @@ export default function Home() {
           return;
       }
 
-      const points = validPoints.map(p => ({ x: p.concentration, y: p.absorbance }));
-      const regression = calculateLinearRegression(points);
+      // Use true absorbance (raw - blank) for regression
+      const truePoints = validPoints.map(p => ({ x: p.concentration, y: p.absorbance - blankValue }));
+      const regression = calculateLinearRegression(truePoints);
 
       if (!isNaN(regression.m) && !isNaN(regression.c)) {
           setStandardCurveInfo(regression);
@@ -148,15 +154,14 @@ export default function Home() {
   }
 
   useEffect(() => {
-      updateCurveInfo(watchedStandardCurve);
-  }, [watchedStandardCurve]);
+      updateCurveInfo(watchedStandardCurve, watchedBlankAbsorbance);
+  }, [watchedStandardCurve, watchedBlankAbsorbance]);
 
 
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
-    const targetR2Value = form.getValues("targetR2");
-    
-    const targetR2 = targetR2Value === null || targetR2Value === undefined || isNaN(Number(targetR2Value)) ? undefined : Number(targetR2Value);
+    const targetR2 = form.getValues("targetR2");
+    const blankAbsorbance = form.getValues("blankAbsorbance");
 
     if (points.length < 2) {
       toast({
@@ -181,10 +186,13 @@ export default function Home() {
     
     setIsAdjusting(true);
     try {
-        const adjustedPoints = await adjustRsquared(points, targetR2);
+        const adjustedPoints = await adjustRsquared(points, blankAbsorbance, targetR2);
         replaceStandardCurve(adjustedPoints);
         
-        const finalRegression = calculateLinearRegression(adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance})));
+        // Recalculate info with the new points
+        const truePoints = adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance - blankAbsorbance}));
+        const finalRegression = calculateLinearRegression(truePoints);
+        
         if (!isNaN(finalRegression.m) && !isNaN(finalRegression.c)) {
           setStandardCurveInfo(finalRegression);
         } else {
@@ -236,9 +244,11 @@ export default function Home() {
     if (!analysisResult) return null;
 
     const { m, c } = analysisResult.standardCurve;
+    const blankAbsorbance = form.getValues('blankAbsorbance');
 
     return analysisResult.groupResults.map(group => {
-      const calculatedConcentrations = group.absorbanceValues.map(abs => (abs - c) / m);
+      // Use true absorbance (raw - blank) to calculate concentration
+      const calculatedConcentrations = group.absorbanceValues.map(abs => (abs - blankAbsorbance - c) / m);
       const concentrationMean = calculatedConcentrations.reduce((a, b) => a + b, 0) / calculatedConcentrations.length;
       const concentrationSD = calculateSD(calculatedConcentrations);
 
@@ -253,12 +263,12 @@ export default function Home() {
         concentrationSD,
       };
     });
-  }, [analysisResult]);
+  }, [analysisResult, form]);
   
   const handleExport = () => {
     if (!analysisResult || !forwardTestResults) return;
   
-    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups } = form.getValues();
+    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance } = form.getValues();
     const { m, c, rSquare } = analysisResult.standardCurve;
   
     let csvData: any[] = [];
@@ -273,13 +283,14 @@ export default function Home() {
   
     // 2. Standard Curve Details
     csvData.push(["Standard Curve Details"]);
-    csvData.push(["Equation", `y = ${m.toFixed(4)}x + ${c.toFixed(4)}`]);
+    csvData.push(["Equation (True OD)", `y = ${m.toFixed(4)}x + ${c.toFixed(4)}`]);
     csvData.push(["R-squared", rSquare.toFixed(4)]);
+    csvData.push(["Blank Absorbance", blankAbsorbance]);
     csvData.push([]); // Blank row
-    csvData.push(["Standard Curve Data"]);
-    csvData.push(["Concentration", "Absorbance"]);
+    csvData.push(["Standard Curve Raw Data"]);
+    csvData.push(["Concentration", "Raw Absorbance", "True Absorbance"]);
     standardCurveInputData.forEach(p => {
-      csvData.push([p.concentration, p.absorbance]);
+      csvData.push([p.concentration, p.absorbance, (p.absorbance - blankAbsorbance).toFixed(4)]);
     });
     csvData.push([]); // Blank row
   
@@ -303,7 +314,7 @@ export default function Home() {
   
     // 5. Detailed Sample Data
     csvData.push(["Detailed Sample Data"]);
-    csvData.push(["Group", "Sample", "TraceBack Absorbance", "Calculated Concentration"]);
+    csvData.push(["Group", "Sample", "TraceBack Raw Absorbance", "Calculated Concentration"]);
     forwardTestResults.forEach(group => {
         group.sampleData.forEach(sample => {
             csvData.push([
@@ -332,6 +343,17 @@ export default function Home() {
       title: "Export Successful",
       description: "Your data has been downloaded as a CSV file.",
     });
+  };
+
+  const handleTargetR2Change = (increment: boolean) => {
+    const currentValue = form.getValues('targetR2') ?? 0.99;
+    const step = 0.005;
+    let newValue = increment ? currentValue + step : currentValue - step;
+    
+    // Clamp the value between 0 and 1
+    newValue = Math.max(0, Math.min(1, newValue));
+    
+    form.setValue('targetR2', parseFloat(newValue.toFixed(4)));
   };
 
 
@@ -557,28 +579,57 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <FormField
-                        control={form.control}
-                        name="targetR2"
-                        render={({ field }) => (
-                            <FormItem>
-                            <FormLabel>Target R² (Optional)</FormLabel>
-                            <FormControl>
-                                <Input
-                                type="number"
-                                step="0.001"
-                                min="0"
-                                max="1"
-                                placeholder="e.g., 0.995. Leave blank for perfect R²."
-                                {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
-                                value={field.value ?? ''}
-                                />
-                            </FormControl>
-                            <FormMessage />
-                            </FormItem>
-                        )}
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                          control={form.control}
+                          name="blankAbsorbance"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel>Blank Absorbance</FormLabel>
+                              <FormControl>
+                                  <Input
+                                  type="number"
+                                  step="any"
+                                  placeholder="e.g., 0.05"
+                                  {...field}
+                                  />
+                              </FormControl>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                      <FormItem>
+                          <FormLabel>Target R²</FormLabel>
+                          <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background px-3">
+                              <span className="font-mono text-sm">
+                                  {(form.watch('targetR2') ?? 0).toFixed(4)}
+                              </span>
+                              <div className="flex flex-col">
+                                  <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-4 w-4"
+                                      onClick={() => handleTargetR2Change(true)}
+                                      aria-label="Increase Target R-squared"
+                                  >
+                                      <ChevronUp className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-4 w-4"
+                                      onClick={() => handleTargetR2Change(false)}
+                                      aria-label="Decrease Target R-squared"
+                                  >
+                                      <ChevronDown className="h-3 w-3" />
+                                  </Button>
+                              </div>
+                          </div>
+                      </FormItem>
+                    </div>
+
                     <div className="max-h-60 space-y-2 overflow-y-auto pr-2">
                       {standardCurveFields.map((field, index) => (
                         <div
@@ -658,7 +709,7 @@ export default function Home() {
                     {standardCurveInfo && (
                         <div className="mt-4 space-y-2 rounded-lg border bg-muted/50 p-4">
                             <h4 className="font-headline text-md font-semibold">
-                                Curve Details
+                                Curve Details (from True OD)
                             </h4>
                             <p className="text-sm font-medium">
                                 Equation:{" "}
@@ -715,7 +766,7 @@ export default function Home() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  <h3 className="font-headline text-lg font-semibold">Standard Curve</h3>
+                  <h3 className="font-headline text-lg font-semibold">Standard Curve (from True OD)</h3>
                   <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-muted/50 p-4">
                     <p className="text-sm font-medium">
                       Equation: <span className="font-mono text-primary">{`y = ${analysisResult.standardCurve.m.toFixed(4)}x + ${analysisResult.standardCurve.c.toFixed(4)}`}</span>
@@ -727,7 +778,7 @@ export default function Home() {
                 </div>
                 
                 <div className="space-y-4">
-                   <h3 className="font-headline text-lg font-semibold">TraceBack Absorbance Values</h3>
+                   <h3 className="font-headline text-lg font-semibold">TraceBack Raw Absorbance Values</h3>
                   {analysisResult.groupResults.map((group) => (
                     <div key={group.groupName}>
                        <h4 className="font-semibold text-foreground">{group.groupName}</h4>
@@ -813,7 +864,7 @@ export default function Home() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="text-center">Sample</TableHead>
-                                            <TableHead className="text-center">TraceBack Absorbance</TableHead>
+                                            <TableHead className="text-center">Raw Absorbance</TableHead>
                                             <TableHead className="text-center">Recalculated Conc.</TableHead>
                                         </TableRow>
                                     </TableHeader>
