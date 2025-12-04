@@ -548,7 +548,13 @@ export default function Home() {
                             
                             <h4 className="font-headline text-lg">Workflow Overview</h4>
                             <ol className="list-decimal pl-5 space-y-2">
-                                <li><strong>Group Data:</strong> Enter the final, published mean concentration and standard deviation for each of your experimental groups (e.g., Control, Treated).</li>
+                                <li><strong>Group Data:</strong> Enter the final, published mean concentration and standard deviation for each of your experimental groups (e.g., Control, Treated).
+                                    <ul className="list-disc pl-5 mt-2 space-y-1">
+                                        <li>Optionally, enable <strong>"Use Plate Layout"</strong> to visually select wells for your samples on a 96-well plate. Wells for different groups will be color-coded.</li>
+                                        <li>The number of samples will be automatically determined based on your well selections (2 wells = 1 sample).</li>
+                                        <li>The selected well coordinates will appear in your final data tables and in a full plate map in the CSV export.</li>
+                                    </ul>
+                                </li>
                                 <li><strong>Forward Calculation Steps:</strong> Define any mathematical steps used to get from the initial concentration (read from the standard curve) to the final concentration. This is crucial for accounting for dilution factors. For example, if your sample was diluted 10-fold, you would add a "Multiply by 10" step.</li>
                                 <li><strong>Standard Curve Data:</strong> This is the most important step.
                                     <ul className="list-disc pl-5 mt-2 space-y-1">
