@@ -25,16 +25,11 @@ function generateAbsorbanceValues(
     meanConcentration: number,
     standardDeviation: number,
     samplesPerGroup: number,
-    standardCurveEquation: string
+    slope: number,
+    intercept: number
 ): { absorbanceValues: number[] } {
-    const equationMatch = standardCurveEquation.match(/y = ([\d.-]+)x \+ ([\d.-]+)/);
-    if (!equationMatch) {
-        throw new Error("Invalid standard curve equation format.");
-    }
-    const m = parseFloat(equationMatch[1]);
-    const c = parseFloat(equationMatch[2]);
 
-    if (isNaN(m) || isNaN(c)) {
+    if (isNaN(slope) || isNaN(intercept)) {
         throw new Error("Could not parse slope or intercept from the standard curve equation.");
     }
 
@@ -47,7 +42,7 @@ function generateAbsorbanceValues(
 
     const absorbanceValues = concentrationValues.map(conc => {
         // Use the standard curve to find the corresponding absorbance (y = mx + c)
-        const absorbance = m * conc + c;
+        const absorbance = slope * conc + intercept;
         // Ensure absorbance is not negative
         return Math.max(0, absorbance);
     });
@@ -59,7 +54,6 @@ export type AnalysisResult = {
   standardCurve: {
     m: number;
     c: number;
-    rSquare: number;
   };
   groupResults: {
     groupName: string;
@@ -159,19 +153,13 @@ export async function runAnalysis(
   values: z.infer<typeof formSchema>
 ): Promise<AnalysisResult> {
   try {
-    const { groups, standardCurve, blankAbsorbance } = values;
+    const { groups, standardCurve, blankAbsorbance, slope, intercept } = values;
 
-    // 1. Standard Curve Calculation using TRUE absorbance values (raw - blank)
-    const truePoints = standardCurve.map(p => ({ x: p.concentration, y: p.absorbance - blankAbsorbance }));
-    const regression = calculateLinearRegression(truePoints);
-
-    if (isNaN(regression.m) || isNaN(regression.c)) {
-        throw new Error("Could not calculate standard curve. Please check your data points.");
+    if (slope === undefined || intercept === undefined) {
+        throw new Error("Slope and Intercept must be provided for the analysis.");
     }
-
+    
     const groupResults = [];
-    // The equation uses the true absorbance values
-    const standardCurveEquation = `y = ${regression.m.toFixed(4)}x + ${regression.c.toFixed(4)}`;
 
     // 2. Individual Sample Absorbance Calculation for each group
     for (const group of groups) {
@@ -180,7 +168,8 @@ export async function runAnalysis(
         group.mean,
         group.sd,
         group.samples,
-        standardCurveEquation
+        slope,
+        intercept
       );
 
       // The generated absorbances are "true" values, so we add the blank back to simulate raw data.
@@ -194,9 +183,8 @@ export async function runAnalysis(
 
     return {
       standardCurve: {
-        m: regression.m,
-        c: regression.c,
-        rSquare: regression.rSquare,
+        m: slope,
+        c: intercept,
       },
       groupResults,
     };

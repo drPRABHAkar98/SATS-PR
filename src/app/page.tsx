@@ -68,12 +68,6 @@ const calculateSD = (data: number[]): number => {
     return Math.sqrt(variance);
 };
 
-type StandardCurveInfo = {
-    m: number;
-    c: number;
-    rSquare: number;
-} | null;
-
 
 export default function Home() {
   const { toast } = useToast();
@@ -82,7 +76,6 @@ export default function Home() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
-  const [standardCurveInfo, setStandardCurveInfo] = useState<StandardCurveInfo>(null);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -104,7 +97,9 @@ export default function Home() {
         { concentration: 40, absorbance: 0.8 },
       ],
       blankAbsorbance: 0.05,
-      targetR2: 0.995
+      targetR2: 0.995,
+      slope: 0.0188,
+      intercept: 0.05,
     },
   });
 
@@ -126,37 +121,6 @@ export default function Home() {
     control: form.control,
     name: "standardCurve",
   });
-
-  const watchedStandardCurve = form.watch('standardCurve');
-  const watchedBlankAbsorbance = form.watch('blankAbsorbance');
-  
-  const updateCurveInfo = (data: {concentration: number, absorbance: number}[], blankValue: number) => {
-      if (data.length < 2) {
-          setStandardCurveInfo(null);
-          return;
-      }
-      
-      const validPoints = data.filter(p => !isNaN(p.concentration) && !isNaN(p.absorbance));
-      if (validPoints.length < 2) {
-          setStandardCurveInfo(null);
-          return;
-      }
-
-      // Use true absorbance (raw - blank) for regression
-      const truePoints = validPoints.map(p => ({ x: p.concentration, y: p.absorbance - blankValue }));
-      const regression = calculateLinearRegression(truePoints);
-
-      if (!isNaN(regression.m) && !isNaN(regression.c)) {
-          setStandardCurveInfo(regression);
-      } else {
-          setStandardCurveInfo(null);
-      }
-  }
-
-  useEffect(() => {
-      updateCurveInfo(watchedStandardCurve, watchedBlankAbsorbance);
-  }, [watchedStandardCurve, watchedBlankAbsorbance]);
-
 
   async function autoFillAbsorbance() {
     const points = form.getValues("standardCurve");
@@ -193,15 +157,12 @@ export default function Home() {
         const truePoints = adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance - blankAbsorbance}));
         const finalRegression = calculateLinearRegression(truePoints);
         
-        if (!isNaN(finalRegression.m) && !isNaN(finalRegression.c)) {
-          setStandardCurveInfo(finalRegression);
-        } else {
-          setStandardCurveInfo(null);
-        }
+        form.setValue('slope', finalRegression.m);
+        form.setValue('intercept', finalRegression.c);
 
         toast({
             title: "Auto-fill Complete",
-            description: `Absorbance values adjusted. New R² is ${finalRegression.rSquare.toFixed(4)}.`,
+            description: `Absorbance values adjusted. Plot these points in Excel to get the final equation. R² is approx ${finalRegression.rSquare.toFixed(4)}.`,
         });
 
     } catch (error) {
@@ -268,8 +229,7 @@ export default function Home() {
   const handleExport = () => {
     if (!analysisResult || !forwardTestResults) return;
   
-    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance } = form.getValues();
-    const { m, c, rSquare } = analysisResult.standardCurve;
+    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, blankAbsorbance, slope, intercept } = form.getValues();
   
     let csvData: any[] = [];
   
@@ -283,11 +243,10 @@ export default function Home() {
   
     // 2. Standard Curve Details
     csvData.push(["Standard Curve Details"]);
-    csvData.push(["Equation (True OD)", `y = ${m.toFixed(4)}x + ${c.toFixed(4)}`]);
-    csvData.push(["R-squared", rSquare.toFixed(4)]);
+    csvData.push(["Equation (from manual input)", `y = ${slope.toFixed(4)}x + ${intercept.toFixed(4)}`]);
     csvData.push(["Blank Absorbance", blankAbsorbance]);
     csvData.push([]); // Blank row
-    csvData.push(["Standard Curve Raw Data"]);
+    csvData.push(["Standard Curve Raw Data (for reference)"]);
     csvData.push(["Concentration", "Raw Absorbance", "True Absorbance"]);
     standardCurveInputData.forEach(p => {
       csvData.push([p.concentration, p.absorbance, (p.absorbance - blankAbsorbance).toFixed(4)]);
@@ -573,7 +532,7 @@ export default function Home() {
                           2. Standard Curve Data
                         </CardTitle>
                         <CardDescription>
-                          Provide data points to generate the standard curve.
+                          Provide data points and the final equation for the standard curve.
                         </CardDescription>
                       </div>
                     </div>
@@ -599,7 +558,7 @@ export default function Home() {
                           )}
                       />
                       <FormItem>
-                          <FormLabel>Target R²</FormLabel>
+                          <FormLabel>Target R² (for Auto-fill)</FormLabel>
                           <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background px-3">
                               <span className="font-mono text-sm">
                                   {(form.watch('targetR2') ?? 0).toFixed(4)}
@@ -706,25 +665,50 @@ export default function Home() {
                         )}
                       </Button>
                     </div>
-                    {standardCurveInfo && (
-                        <div className="mt-4 space-y-2 rounded-lg border bg-muted/50 p-4">
-                            <h4 className="font-headline text-md font-semibold">
-                                Curve Details (from True OD)
-                            </h4>
-                            <p className="text-sm font-medium">
-                                Equation:{" "}
-                                <span className="font-mono text-primary">{`y = ${standardCurveInfo.m.toFixed(
-                                4
-                                )}x + ${standardCurveInfo.c.toFixed(4)}`}</span>
-                            </p>
-                            <p className="text-sm font-medium">
-                                R² Value:{" "}
-                                <span className="font-mono text-primary">
-                                {standardCurveInfo.rSquare.toFixed(4)}
-                                </span>
-                            </p>
+                     <div className="space-y-4 rounded-lg border bg-muted/50 p-4">
+                        <h4 className="font-headline text-md font-semibold">
+                            Manual Curve Equation
+                        </h4>
+                        <p className="text-xs text-muted-foreground">Use Auto-fill to generate points, then find the equation in Excel and enter it here.</p>
+                        <div className="grid grid-cols-2 gap-4">
+                           <FormField
+                                control={form.control}
+                                name="slope"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>Slope (m)</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                        type="number"
+                                        step="any"
+                                        placeholder="e.g., 0.0188"
+                                        {...field}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                             <FormField
+                                control={form.control}
+                                name="intercept"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>Y-Intercept (c)</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                        type="number"
+                                        step="any"
+                                        placeholder="e.g., 0.05"
+                                        {...field}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
                         </div>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -766,13 +750,10 @@ export default function Home() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  <h3 className="font-headline text-lg font-semibold">Standard Curve (from True OD)</h3>
+                  <h3 className="font-headline text-lg font-semibold">Standard Curve (from Manual Input)</h3>
                   <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-muted/50 p-4">
                     <p className="text-sm font-medium">
                       Equation: <span className="font-mono text-primary">{`y = ${analysisResult.standardCurve.m.toFixed(4)}x + ${analysisResult.standardCurve.c.toFixed(4)}`}</span>
-                    </p>
-                    <p className="text-sm font-medium">
-                      R² Value: <span className="font-mono text-primary">{analysisResult.standardCurve.rSquare.toFixed(4)}</span>
                     </p>
                   </div>
                 </div>
