@@ -156,16 +156,9 @@ export default function Home() {
         const adjustedPoints = await adjustRsquared(points, blankAbsorbance, targetR2);
         replaceStandardCurve(adjustedPoints);
         
-        // Recalculate info with the new points
-        const truePoints = adjustedPoints.map(p => ({x: p.concentration, y: p.absorbance - blankAbsorbance}));
-        const finalRegression = calculateLinearRegression(truePoints);
-        
-        form.setValue('slope', finalRegression.m);
-        form.setValue('intercept', finalRegression.c);
-
         toast({
             title: "Auto-fill Complete",
-            description: `Absorbance values adjusted. Plot these points in Excel to get the final equation. R² is approx ${finalRegression.rSquare.toFixed(4)}.`,
+            description: `Absorbance values adjusted. Plot these points in Excel to get the final equation.`,
         });
 
     } catch (error) {
@@ -246,7 +239,7 @@ export default function Home() {
   
     // 2. Standard Curve Details
     csvData.push(["Standard Curve Details"]);
-    csvData.push(["Equation (from manual input)", `y = ${slope.toFixed(4)}x + ${intercept.toFixed(4)}`]);
+    csvData.push(["Equation Used for Analysis", `y = ${slope.toFixed(4)}x + ${intercept.toFixed(4)}`]);
     csvData.push(["Blank Absorbance", blankAbsorbance]);
     csvData.push([]); // Blank row
     csvData.push(["Standard Curve Raw Data (for reference)"]);
@@ -535,7 +528,7 @@ export default function Home() {
                           2. Standard Curve Data
                         </CardTitle>
                         <CardDescription>
-                          Provide data points and the final equation for the standard curve.
+                          This is sample data. Adjust points or use Auto-fill, then get the equation from Excel and enter it below.
                         </CardDescription>
                       </div>
                     </div>
@@ -685,9 +678,9 @@ export default function Home() {
                     </div>
                      <div className="space-y-4 rounded-lg border bg-muted/50 p-4">
                         <h4 className="font-headline text-md font-semibold">
-                            Manual Curve Equation
+                            Manual Curve Equation (from Excel)
                         </h4>
-                        <p className="text-xs text-muted-foreground">Use Auto-fill to generate points, then find the equation in Excel and enter it here.</p>
+                        <p className="text-xs text-muted-foreground">This equation will be used for the TraceBack analysis.</p>
                         <div className="grid grid-cols-2 gap-4">
                            <FormField
                                 control={form.control}
