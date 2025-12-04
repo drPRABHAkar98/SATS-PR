@@ -38,7 +38,3 @@ export const formSchema = z.object({
     .array(standardPointSchema)
     .min(2, "At least two points are needed for the curve."),
 });
-
-    
-
-    
