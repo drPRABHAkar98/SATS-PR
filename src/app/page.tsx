@@ -931,9 +931,8 @@ export default function Home() {
                                         {group.sampleData.map(sample => (
                                             <TableRow key={sample.sample}>
                                                 <TableCell className="text-center font-medium">{sample.sample}</TableCell>
--                                                <TableCell className="text-center font-mono">{sample.absorbance.toFixed(4)}</TableCell>
-+                                                <TableCell className="text-center font-mono">{sample.rawAbsorbance.toFixed(4)}</TableCell>
-+                                                <TableCell className="text-center font-mono text-muted-foreground">{sample.trueAbsorbance.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono">{sample.rawAbsorbance.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono text-muted-foreground">{sample.trueAbsorbance.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-primary">{sample.concentration.toFixed(4)}</TableCell>
                                             </TableRow>
                                         ))}
@@ -952,6 +951,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-    
