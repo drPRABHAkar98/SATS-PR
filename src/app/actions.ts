@@ -47,7 +47,7 @@ function generateAbsorbanceValues(
     slope: number,
     intercept: number,
     forwardSteps: z.infer<typeof formSchema>['forwardSteps']
-): { absorbanceValues: number[] } {
+): { absorbanceValues: number[], wellAbsorbances: { well: string, value: number }[][] } {
 
     if (isNaN(slope) || isNaN(intercept)) {
         throw new Error("Could not parse slope or intercept from the standard curve equation.");
@@ -76,7 +76,16 @@ function generateAbsorbanceValues(
         return Math.max(0, absorbance);
     });
 
-    return { absorbanceValues };
+    const wellAbsorbances = absorbanceValues.map(meanAbs => {
+        // Simulate small variations for 2 wells that average to the meanAbs
+        const variation = (Math.random() - 0.5) * 0.02 * meanAbs; // up to 2% variation
+        const well1 = meanAbs + variation;
+        const well2 = meanAbs - variation;
+        return [{ well: 'Well 1', value: Math.max(0, well1) }, { well: 'Well 2', value: Math.max(0, well2) }];
+    });
+
+
+    return { absorbanceValues, wellAbsorbances };
 }
 
 export type AnalysisResult = {
@@ -87,6 +96,8 @@ export type AnalysisResult = {
   groupResults: {
     groupName: string;
     absorbanceValues: number[];
+    wellAbsorbances: { well: string; value: number; }[][];
+    wellSelection: string[];
   }[];
 };
 
@@ -204,10 +215,15 @@ export async function runAnalysis(
 
       // The generated absorbances are "true" values, so we add the blank back to simulate raw data.
       const rawAbsorbanceValues = result.absorbanceValues.map(abs => abs + blankAbsorbance);
+      const rawWellAbsorbances = result.wellAbsorbances.map(wells => 
+        wells.map(w => ({ ...w, value: w.value + blankAbsorbance }))
+      );
 
       groupResults.push({
         groupName: group.name,
         absorbanceValues: rawAbsorbanceValues,
+        wellAbsorbances: rawWellAbsorbances,
+        wellSelection: group.wellSelection || []
       });
     }
 

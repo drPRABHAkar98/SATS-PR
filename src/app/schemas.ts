@@ -9,6 +9,8 @@ export const groupSchema = z.object({
     .number({ invalid_type_error: "Must be a number." })
     .int()
     .min(1, "At least 1 sample."),
+  usePlate: z.boolean().optional(),
+  wellSelection: z.array(z.string()).optional(),
 });
 
 export const standardPointSchema = z.object({

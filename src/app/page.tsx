@@ -24,6 +24,7 @@ import {
   ChevronUp,
   ChevronDown,
   ArrowRight,
+  Grid3x3
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -60,6 +61,8 @@ import { runAnalysis, adjustRsquared } from "./actions";
 import { formSchema } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 // Helper function to calculate standard deviation
 const calculateSD = (data: number[]): number => {
@@ -82,6 +85,49 @@ const applyForwardSteps = (value: number, steps: z.infer<typeof formSchema>['for
   }, value);
 };
 
+const Plate = ({
+  selectedWells,
+  onWellClick,
+  otherSelectedWells,
+  groupColor,
+}: {
+  selectedWells: string[];
+  onWellClick: (well: string) => void;
+  otherSelectedWells: string[];
+  groupColor: string;
+}) => {
+  const rows = Array.from({ length: 8 }, (_, i) => String.fromCharCode(65 + i)); // A-H
+  const cols = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
+
+  return (
+    <div className="grid grid-cols-12 gap-1">
+      {rows.map(row => (
+        cols.map(col => {
+          const well = `${row}${col}`;
+          const isSelected = selectedWells.includes(well);
+          const isOtherSelected = otherSelectedWells.includes(well);
+          return (
+            <button
+              type="button"
+              key={well}
+              onClick={() => !isOtherSelected && onWellClick(well)}
+              disabled={isOtherSelected}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-sm border text-xs transition-colors",
+                isSelected && `bg-${groupColor}-500 text-white`,
+                isOtherSelected && "cursor-not-allowed bg-muted opacity-50",
+                !isSelected && !isOtherSelected && "hover:bg-accent"
+              )}
+            >
+              {well}
+            </button>
+          );
+        })
+      ))}
+    </div>
+  );
+};
+
 
 export default function Home() {
   const { toast } = useToast();
@@ -100,8 +146,8 @@ export default function Home() {
       date: new Date().toISOString().split("T")[0],
       experimentName: "Experiment 1",
       groups: [
-        { name: "Normal", mean: 0, sd: 0, samples: 3 },
-        { name: "Diseased", mean: 0, sd: 0, samples: 3 },
+        { name: "Normal", mean: 0, sd: 0, samples: 3, usePlate: false, wellSelection: [] },
+        { name: "Diseased", mean: 0, sd: 0, samples: 3, usePlate: false, wellSelection: [] },
       ],
       forwardSteps: [],
       standardCurve: [
@@ -149,6 +195,7 @@ export default function Home() {
   
   const watchedBlankAbsorbance = form.watch('blankAbsorbance');
   const watchedStandardCurve = form.watch('standardCurve');
+  const watchedGroups = form.watch('groups');
   
   const [curveDetails, setCurveDetails] = useState({ m: 0, c: 0, rSquare: 0 });
 
@@ -277,28 +324,36 @@ export default function Home() {
     const forwardSteps = form.getValues('forwardSteps');
 
     return analysisResult.groupResults.map(group => {
-      // Use true absorbance (raw - blank) to calculate concentration
-      const extrapolatedConcentrations = group.absorbanceValues.map(abs => (abs - blankAbsorbance - c) / m);
+      const sampleData = group.absorbanceValues.map((abs, i) => {
+          const extrapolatedConcentration = (abs - blankAbsorbance - c) / m;
+          const finalConcentration = applyForwardSteps(extrapolatedConcentration, forwardSteps);
+          
+          const wellData = group.wellAbsorbances[i].map((well, wellIndex) => ({
+              well: group.wellSelection[i*2 + wellIndex] || well.well,
+              value: well.value,
+          }));
 
-      // Apply forward steps to each sample's extrapolated concentration
-      const finalConcentrations = extrapolatedConcentrations.map(conc => applyForwardSteps(conc, forwardSteps));
+          return {
+              sample: i + 1,
+              rawAbsorbance: abs,
+              trueAbsorbance: abs - blankAbsorbance,
+              extrapolatedConcentration: extrapolatedConcentration,
+              finalConcentration: finalConcentration,
+              wellData: wellData,
+          };
+      });
 
+      const finalConcentrations = sampleData.map(d => d.finalConcentration);
       const finalMean = finalConcentrations.reduce((a, b) => a + b, 0) / finalConcentrations.length;
       const finalSD = calculateSD(finalConcentrations);
 
       return {
-        groupName: group.groupName,
-        sampleData: group.absorbanceValues.map((abs, i) => ({
-            sample: i + 1,
-            rawAbsorbance: abs,
-            trueAbsorbance: abs - blankAbsorbance,
-            extrapolatedConcentration: extrapolatedConcentrations[i],
-            finalConcentration: finalConcentrations[i],
-        })),
-        finalMean,
-        finalSD,
+          groupName: group.groupName,
+          sampleData,
+          finalMean,
+          finalSD,
       };
-    });
+  });
   }, [analysisResult, form]);
   
   const handleExport = () => {
@@ -360,12 +415,16 @@ export default function Home() {
   
     // 5. Detailed Sample Data
     csvData.push(["Detailed Sample Data"]);
-    csvData.push(["Group", "Sample", "TraceBack Raw Absorbance", "Extrapolated Concentration", "Final Concentration"]);
+    csvData.push(["Group", "Sample", "Well 1", "Well 1 Abs", "Well 2", "Well 2 Abs", "Mean Raw Absorbance", "Extrapolated Concentration", "Final Concentration"]);
     forwardTestResults.forEach(group => {
         group.sampleData.forEach(sample => {
             csvData.push([
                 group.groupName,
                 sample.sample,
+                sample.wellData[0]?.well,
+                sample.wellData[0]?.value.toFixed(4),
+                sample.wellData[1]?.well,
+                sample.wellData[1]?.value.toFixed(4),
                 sample.rawAbsorbance.toFixed(4),
                 sample.extrapolatedConcentration.toFixed(4),
                 sample.finalConcentration.toFixed(4)
@@ -402,6 +461,9 @@ export default function Home() {
     
     form.setValue('targetR2', parseFloat(newValue.toFixed(4)));
   };
+
+  const allSelectedWells = watchedGroups.flatMap(g => g.wellSelection || []);
+  const groupColors = ["blue", "green", "red", "yellow", "purple", "pink"];
 
 
   return (
@@ -513,11 +575,31 @@ export default function Home() {
                     <Accordion type="multiple" className="w-full" defaultValue={groupFields.map((_, index) => `item-${index}`)}>
                       {groupFields.map((field, index) => {
                         const groupName = form.watch(`groups.${index}.name`);
+                        const usePlate = form.watch(`groups.${index}.usePlate`);
+                        const groupWellSelection = form.watch(`groups.${index}.wellSelection`) || [];
+
+                        const otherSelectedWellsForGroup = allSelectedWells.filter(
+                          well => !groupWellSelection.includes(well)
+                        );
+                        
+                        const handleWellClick = (well: string) => {
+                          const currentSelection = form.getValues(`groups.${index}.wellSelection`) || [];
+                          const newSelection = currentSelection.includes(well)
+                            ? currentSelection.filter(w => w !== well)
+                            : [...currentSelection, well];
+                          form.setValue(`groups.${index}.wellSelection`, newSelection, { shouldValidate: true });
+                          form.setValue(`groups.${index}.samples`, Math.ceil(newSelection.length / 2), { shouldValidate: true });
+                        };
+
+
                         return (
                           <AccordionItem value={`item-${index}`} key={field.id}>
                             <div className="flex items-center">
                               <AccordionTrigger className="flex-1 pr-2">
-                                Group: {groupName || `(Group ${index + 1})`}
+                                <div className="flex items-center gap-2">
+                                  <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[index % groupColors.length]}-500`)} />
+                                  {groupName || `(Group ${index + 1})`}
+                                </div>
                               </AccordionTrigger>
                               <Button
                                 type="button"
@@ -573,19 +655,62 @@ export default function Home() {
                                       </FormItem>
                                     )}
                                   />
-                                  <FormField
-                                    control={form.control}
-                                    name={`groups.${index}.samples`}
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <FormLabel>Samples (n)</FormLabel>
-                                        <FormControl>
-                                          <Input type="number" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                      </FormItem>
-                                    )}
+                                   <FormField
+                                      control={form.control}
+                                      name={`groups.${index}.samples`}
+                                      render={({ field }) => (
+                                          <FormItem>
+                                          <FormLabel>Samples (n)</FormLabel>
+                                          <FormControl>
+                                              <Input type="number" {...field} readOnly={usePlate}/>
+                                          </FormControl>
+                                          <FormMessage />
+                                          </FormItem>
+                                      )}
                                   />
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <FormField
+                                      control={form.control}
+                                      name={`groups.${index}.usePlate`}
+                                      render={({ field }) => (
+                                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm col-span-3">
+                                          <div className="space-y-0.5">
+                                            <FormLabel>Use Plate Layout</FormLabel>
+                                            <FormDescription>
+                                              Select wells for this group from a 96-well plate.
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            <Switch
+                                              checked={field.value}
+                                              onCheckedChange={field.onChange}
+                                            />
+                                          </FormControl>
+                                        </FormItem>
+                                      )}
+                                    />
+                                    {usePlate && (
+                                      <Dialog>
+                                        <DialogTrigger asChild>
+                                          <Button variant="outline" size="icon">
+                                            <Grid3x3 className="h-4 w-4"/>
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent className="max-w-2xl">
+                                          <DialogHeader>
+                                            <DialogTitle>Select Wells for {groupName || `Group ${index + 1}`}</DialogTitle>
+                                          </DialogHeader>
+                                          <Plate
+                                            selectedWells={groupWellSelection}
+                                            onWellClick={handleWellClick}
+                                            otherSelectedWells={otherSelectedWellsForGroup}
+                                            groupColor={groupColors[index % groupColors.length]}
+                                          />
+                                           <p className="text-sm text-muted-foreground">Each sample requires 2 wells (duplicates).</p>
+                                        </DialogContent>
+                                      </Dialog>
+                                    )}
                                 </div>
                               </div>
                             </AccordionContent>
@@ -597,7 +722,7 @@ export default function Home() {
                       type="button"
                       variant="outline"
                       onClick={() =>
-                        appendGroup({ name: "", mean: 0, sd: 0, samples: 3 })
+                        appendGroup({ name: "", mean: 0, sd: 0, samples: 3, usePlate: false, wellSelection: [] })
                       }
                       className="w-full"
                     >
@@ -954,33 +1079,43 @@ export default function Home() {
                 
                 <div className="space-y-4">
                    <h3 className="font-headline text-lg font-semibold">TraceBack Absorbance Values</h3>
-                  {analysisResult.groupResults.map((group) => (
+                  {analysisResult.groupResults.map((group, groupIndex) => (
                     <div key={group.groupName}>
-                       <h4 className="font-semibold text-foreground">{group.groupName}</h4>
+                       <div className="flex items-center gap-2">
+                          <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[groupIndex % groupColors.length]}-500`)} />
+                          <h4 className="font-semibold text-foreground">{group.groupName}</h4>
+                       </div>
                       <div className="mt-2 overflow-x-auto rounded-lg border">
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-32"></TableHead>
+                              <TableHead className="w-40"></TableHead>
                               {group.absorbanceValues.map((_, index) => (
-                                <TableHead key={index} className="text-center">Sample {index + 1}</TableHead>
+                                <TableHead key={index} className="text-center" colSpan={2}>Sample {index + 1}</TableHead>
                               ))}
+                            </TableRow>
+                             <TableRow>
+                                <TableHead className="w-40"></TableHead>
+                                {group.absorbanceValues.flatMap((_, index) => [
+                                    <TableHead key={`w1-${index}`} className="text-center">{group.wellSelection[index*2] || 'Well 1'}</TableHead>,
+                                    <TableHead key={`w2-${index}`} className="text-center">{group.wellSelection[index*2+1] || 'Well 2'}</TableHead>
+                                ])}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             <TableRow>
                               <TableCell className="font-medium">Raw Absorbance</TableCell>
-                              {group.absorbanceValues.map((value, index) => (
+                              {group.wellAbsorbances.flat().map((well, index) => (
                                 <TableCell key={index} className="text-center font-mono">
-                                  {value.toFixed(4)}
+                                  {well.value.toFixed(4)}
                                 </TableCell>
                               ))}
                             </TableRow>
                              <TableRow>
-                              <TableCell className="font-medium">True Absorbance</TableCell>
-                              {group.absorbanceValues.map((value, index) => (
-                                <TableCell key={index} className="text-center font-mono text-primary">
-                                  {(value - form.getValues('blankAbsorbance')).toFixed(4)}
+                              <TableCell className="font-medium">Mean Raw Absorbance</TableCell>
+                               {group.absorbanceValues.map((value, index) => (
+                                <TableCell key={index} colSpan={2} className="text-center font-mono text-primary font-bold">
+                                  {value.toFixed(4)}
                                 </TableCell>
                               ))}
                             </TableRow>
@@ -1023,11 +1158,14 @@ export default function Home() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {forwardTestResults.map((group) => {
+                  {forwardTestResults.map((group, groupIndex) => {
                       const originalGroup = form.getValues('groups').find(g => g.name === group.groupName);
                       return (
                         <div key={group.groupName} className="space-y-4">
-                            <h3 className="font-headline text-lg font-semibold text-foreground">{group.groupName}</h3>
+                            <div className="flex items-center gap-2">
+                              <div className={cn("h-3 w-3 rounded-full", `bg-${groupColors[groupIndex % groupColors.length]}-500`)} />
+                              <h3 className="font-headline text-lg font-semibold text-foreground">{group.groupName}</h3>
+                            </div>
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="rounded-lg border bg-muted/50 p-4">
                                     <h4 className="text-sm font-medium text-muted-foreground">Original Input Data</h4>
@@ -1049,8 +1187,12 @@ export default function Home() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="text-center">Sample</TableHead>
-                                            <TableHead className="text-center">Raw Absorbance</TableHead>
-                                            <TableHead className="text-center">True Absorbance</TableHead>
+                                            <TableHead className="text-center">Well 1</TableHead>
+                                            <TableHead className="text-center">Well 1 Abs</TableHead>
+                                            <TableHead className="text-center">Well 2</TableHead>
+                                            <TableHead className="text-center">Well 2 Abs</TableHead>
+                                            <TableHead className="text-center">Mean Raw Abs</TableHead>
+                                            <TableHead className="text-center">True Abs</TableHead>
                                             <TableHead className="text-center">Extrapolated Conc.</TableHead>
                                             <TableHead className="text-center">Final Conc.</TableHead>
                                         </TableRow>
@@ -1059,7 +1201,11 @@ export default function Home() {
                                         {group.sampleData.map(sample => (
                                             <TableRow key={sample.sample}>
                                                 <TableCell className="text-center font-medium">{sample.sample}</TableCell>
-                                                <TableCell className="text-center font-mono">{sample.rawAbsorbance.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono text-muted-foreground">{sample.wellData[0]?.well}</TableCell>
+                                                <TableCell className="text-center font-mono">{sample.wellData[0]?.value.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono text-muted-foreground">{sample.wellData[1]?.well}</TableCell>
+                                                <TableCell className="text-center font-mono">{sample.wellData[1]?.value.toFixed(4)}</TableCell>
+                                                <TableCell className="text-center font-mono font-bold">{sample.rawAbsorbance.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-muted-foreground">{sample.trueAbsorbance.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-primary">{sample.extrapolatedConcentration.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-primary font-bold">{sample.finalConcentration.toFixed(4)}</TableCell>
