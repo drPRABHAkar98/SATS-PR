@@ -100,14 +100,14 @@ const Plate = ({
   const cols = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
 
   const colorClasses: { [key: string]: string } = {
-    blue: "bg-blue-500",
-    green: "bg-green-500",
-    red: "bg-red-500",
-    yellow: "bg-yellow-500",
-    purple: "bg-purple-500",
-    pink: "bg-pink-500",
+    blue: "bg-blue-500 text-white",
+    green: "bg-green-500 text-white",
+    red: "bg-red-500 text-white",
+    yellow: "bg-yellow-500 text-white",
+    purple: "bg-purple-500 text-white",
+    pink: "bg-pink-500 text-white",
   };
-  const selectedColorClass = colorClasses[groupColor] || "bg-primary";
+  const selectedColorClass = colorClasses[groupColor] || "bg-primary text-primary-foreground";
 
 
   return (
@@ -125,7 +125,7 @@ const Plate = ({
               disabled={isOtherSelected}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-sm border text-xs transition-colors",
-                isSelected && `${selectedColorClass} text-white`,
+                isSelected && selectedColorClass,
                 isOtherSelected && "cursor-not-allowed bg-muted opacity-50",
                 !isSelected && !isOtherSelected && "hover:bg-accent"
               )}
@@ -426,7 +426,7 @@ export default function Home() {
   
     // 5. Detailed Sample Data
     csvData.push(["Detailed Sample Data"]);
-    csvData.push(["Group", "Sample", "Well 1", "Well 1 Abs", "Well 2", "Well 2 Abs", "Mean Raw Absorbance", "Extrapolated Concentration", "Final Concentration"]);
+    csvData.push(["Group", "Sample", "Well 1", "Well 1 Abs", "Well 2", "Well 2 Abs", "Mean Raw Absorbance", "True Absorbance", "Extrapolated Concentration", "Final Concentration"]);
     forwardTestResults.forEach(group => {
         group.sampleData.forEach(sample => {
             csvData.push([
@@ -437,12 +437,46 @@ export default function Home() {
                 sample.wellData[1]?.well,
                 sample.wellData[1]?.value.toFixed(4),
                 sample.rawAbsorbance.toFixed(4),
+                sample.trueAbsorbance.toFixed(4),
                 sample.extrapolatedConcentration.toFixed(4),
                 sample.finalConcentration.toFixed(4)
             ]);
         });
     });
-  
+    csvData.push([]); // Blank row
+
+    // 6. Plate Layout
+    csvData.push(["Raw Absorbance Plate Layout"]);
+    const plateData: { [key: string]: number } = {};
+    analysisResult.groupResults.forEach(group => {
+        group.wellAbsorbances.forEach((wellPair, sampleIndex) => {
+            wellPair.forEach((well, wellIndex) => {
+                const wellCoord = group.wellSelection[sampleIndex * 2 + wellIndex];
+                if (wellCoord) {
+                    plateData[wellCoord] = well.value;
+                }
+            });
+        });
+    });
+
+    const rows = Array.from({ length: 8 }, (_, i) => String.fromCharCode(65 + i)); // A-H
+    const cols = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
+
+    const headerRow = ["", ...cols.map(String)];
+    csvData.push(headerRow);
+
+    rows.forEach(rowLetter => {
+        const rowData = [rowLetter];
+        cols.forEach(colNumber => {
+            const wellCoord = `${rowLetter}${colNumber}`;
+            const value = plateData[wellCoord];
+            rowData.push(value !== undefined ? value.toFixed(4) : "");
+        });
+        csvData.push(rowData);
+    });
+    csvData.push([]); // Blank row
+
+
     // Convert array of arrays to CSV string
     const csv = Papa.unparse(csvData);
   
@@ -1138,6 +1172,14 @@ export default function Home() {
                                 </TableCell>
                               ))}
                             </TableRow>
+                            <TableRow>
+                                <TableCell className="font-medium">True Absorbance</TableCell>
+                                {group.absorbanceValues.map((value, index) => (
+                                    <TableCell key={index} colSpan={2} className="text-center font-mono text-primary/80">
+                                    {(value - (form.getValues('blankAbsorbance') ?? 0)).toFixed(4)}
+                                    </TableCell>
+                                ))}
+                            </TableRow>
                           </TableBody>
                         </Table>
                       </div>
@@ -1247,3 +1289,5 @@ export default function Home() {
 }
 
     
+
+      
