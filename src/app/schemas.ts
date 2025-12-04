@@ -17,16 +17,6 @@ export const standardPointSchema = z.object({
 
 export type StandardPoint = z.infer<typeof standardPointSchema>;
 
-export const statisticalTestSchema = z.object({
-  selectedGroups: z.array(z.string()).refine(value => value.length >= 2, {
-    message: "You must select at least two groups.",
-  }),
-  test: z.string().min(1, "Please select a test."),
-  significanceLevel: z.string().min(1, "Please select a level."),
-});
-
-export type StatisticalTest = z.infer<typeof statisticalTestSchema>;
-
 export const formSchema = z.object({
   analysisName: z.string().optional(),
   units: z.string().optional(),
@@ -37,5 +27,4 @@ export const formSchema = z.object({
   standardCurve: z
     .array(standardPointSchema)
     .min(2, "At least two points are needed for the curve."),
-  statisticalTests: z.array(statisticalTestSchema)
 });

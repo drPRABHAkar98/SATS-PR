@@ -17,13 +17,10 @@ import {
   ClipboardList,
   FlaskRound,
   Calculator,
-  Sigma,
   Wand2,
   CheckCircle2,
-  Sparkles,
   Download,
   BookUser,
-  Check,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -46,13 +43,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -60,17 +50,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import type { AnalysisResult, StatisticalTestResult, StatisticalTestRunner } from "./actions";
-import { runAnalysis, performStatisticalTest, adjustRsquared } from "./actions";
+import type { AnalysisResult } from "./actions";
+import { runAnalysis, adjustRsquared } from "./actions";
 import { formSchema } from "./schemas";
-import type { StatisticalTest, StandardPoint } from "./schemas";
 import { calculateLinearRegression } from "@/lib/analysis";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
 
 // Helper function to calculate standard deviation
 const calculateSD = (data: number[]): number => {
@@ -80,13 +65,6 @@ const calculateSD = (data: number[]): number => {
     const variance = data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
     return Math.sqrt(variance);
 };
-
-export type TestResultState = {
-  [key: string]: {
-    isLoading: boolean;
-    result: StatisticalTestResult | null;
-  }
-}
 
 type StandardCurveInfo = {
     m: number;
@@ -102,7 +80,6 @@ export default function Home() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
-  const [testResults, setTestResults] = useState<TestResultState>({});
   const [standardCurveInfo, setStandardCurveInfo] = useState<StandardCurveInfo>(null);
 
 
@@ -123,13 +100,6 @@ export default function Home() {
         { concentration: 20, absorbance: 0.4 },
         { concentration: 30, absorbance: 0.6 },
       ],
-      statisticalTests: [
-        {
-          selectedGroups: ["Normal", "Diseased"],
-          test: "t-test",
-          significanceLevel: "0.05",
-        }
-      ],
       targetR2: 0.99
     },
   });
@@ -147,20 +117,10 @@ export default function Home() {
     fields: standardCurveFields,
     append: appendStandardPoint,
     remove: removeStandardPoint,
-    update: updateStandardPoint,
     replace: replaceStandardCurve
   } = useFieldArray({
     control: form.control,
     name: "standardCurve",
-  });
-
-  const {
-    fields: statTestFields,
-    append: appendStatTest,
-    remove: removeStatTest,
-  } = useFieldArray({
-    control: form.control,
-    name: "statisticalTests",
   });
 
   const watchedStandardCurve = form.watch('standardCurve');
@@ -272,49 +232,6 @@ export default function Home() {
     }
   }
 
-  async function onRunTest(testIndex: number, testData: StatisticalTest) {
-    const { selectedGroups, test } = testData;
-    const allGroups = form.getValues('groups');
-
-    if (!selectedGroups || selectedGroups.length < 2) {
-      toast({ variant: "destructive", title: "Selection Error", description: "Please select at least two groups to compare." });
-      return;
-    }
-
-    if (test === 't-test' && selectedGroups.length !== 2) {
-       toast({ variant: "destructive", title: "Selection Error", description: "T-test requires exactly two groups." });
-       return;
-    }
-
-
-    setTestResults(prev => ({ ...prev, [testIndex]: { isLoading: true, result: null }}));
-
-    try {
-      const testInput: StatisticalTestRunner = {
-        selectedGroups: selectedGroups,
-        allGroups: allGroups.map(g => ({
-          name: g.name,
-          mean: Number(g.mean),
-          sd: Number(g.sd),
-          samples: Number(g.samples)
-        })),
-        test: test,
-      };
-      const result = await performStatisticalTest(testInput);
-      setTestResults(prev => ({ ...prev, [testIndex]: { isLoading: false, result }}));
-      toast({ title: "Statistical test complete."});
-    } catch (error) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Test Failed",
-        description:
-          error instanceof Error ? error.message : "An unknown error occurred.",
-      });
-      setTestResults(prev => ({ ...prev, [testIndex]: { isLoading: false, result: null }}));
-    }
-  }
-
   const forwardTestResults = React.useMemo(() => {
     if (!analysisResult) return null;
 
@@ -337,14 +254,11 @@ export default function Home() {
       };
     });
   }, [analysisResult]);
-
-
-  const watchedGroups = form.watch('groups');
   
   const handleExport = () => {
     if (!analysisResult || !forwardTestResults) return;
   
-    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups, statisticalTests } = form.getValues();
+    const { analysisName, units, date, experimentName, standardCurve: standardCurveInputData, groups: initialGroups } = form.getValues();
     const { m, c, rSquare } = analysisResult.standardCurve;
   
     let csvData: any[] = [];
@@ -386,38 +300,6 @@ export default function Home() {
         }
     });
     csvData.push([]); // Blank row
-
-    // 4. Statistical Test Results
-    if (Object.keys(testResults).length > 0) {
-      csvData.push(["Statistical Test Results"]);
-      csvData.push(["Comparison", "Test Type", "Significance Level", "P-Value", "Result"]);
-      statisticalTests.forEach((test, index) => {
-        const testResult = testResults[index]?.result;
-        if (testResult) {
-          if (testResult.tukeyResults) {
-            testResult.tukeyResults.results.forEach(res => {
-              csvData.push([
-                `${res.group1} vs ${res.group2}`,
-                "Tukey's Kramer",
-                `< ${test.significanceLevel}`,
-                "N/A",
-                res.significant ? "Significant" : "Not Significant"
-              ]);
-            });
-          } else if (testResult.pValue !== undefined) {
-             const significant = testResult.pValue < parseFloat(test.significanceLevel);
-             csvData.push([
-              test.selectedGroups.join(' vs '),
-              test.test,
-              `< ${test.significanceLevel}`,
-              testResult.pValue.toExponential(4),
-              significant ? "Significant" : "Not Significant"
-            ]);
-          }
-        }
-      });
-      csvData.push([]); // Blank row
-    }
   
     // 5. Detailed Sample Data
     csvData.push(["Detailed Sample Data"]);
@@ -654,236 +536,6 @@ export default function Home() {
                     </Button>
                   </CardContent>
                 </Card>
-
-                {/* Statistical Analysis */}
-                <Card>
-                  <CardHeader>
-                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Sigma className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <CardTitle className="font-headline text-xl">
-                          3. Statistical Analysis
-                        </CardTitle>
-                        <CardDescription>
-                          Configure and run multiple statistical comparisons.
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                     <Accordion type="multiple" className="w-full" defaultValue={statTestFields.map((_, index) => `test-${index}`)}>
-                       {statTestFields.map((field, index) => {
-                        const testResult = testResults[index];
-                        const currentTest = form.watch('statisticalTests')[index];
-                        const testType = currentTest.test;
-                         return (
-                          <AccordionItem value={`test-${index}`} key={field.id}>
-                            <div className="flex items-center">
-                              <AccordionTrigger className="flex-1 pr-2">
-                                Comparison #{index + 1}: <span className="ml-1 font-semibold">{
-                                  testType === 't-test' ? 'T-test' :
-                                  testType === 'one-way-anova' ? 'One-way ANOVA' :
-                                  testType === 'tukey-kramer' ? "Tukey-Kramer test" :
-                                  'Test'
-                                }</span>
-                              </AccordionTrigger>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeStatTest(index)}
-                                disabled={statTestFields.length <= 1}
-                                aria-label="Remove test"
-                                className="h-8 w-8 shrink-0"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                            <AccordionContent className="p-4 space-y-4">
-                                <FormField
-                                  control={form.control}
-                                  name={`statisticalTests.${index}.selectedGroups`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <div className="mb-4">
-                                        <FormLabel className="text-base">Groups to Compare</FormLabel>
-                                        <FormDescription>
-                                          Select two for T-test, two or more for others.
-                                        </FormDescription>
-                                      </div>
-                                      <div className="space-y-2">
-                                      {watchedGroups.map((group) => (
-                                        <FormField
-                                          key={group.name}
-                                          control={form.control}
-                                          name={`statisticalTests.${index}.selectedGroups`}
-                                          render={({ field }) => {
-                                            return (
-                                              <FormItem
-                                                key={group.name}
-                                                className="flex flex-row items-start space-x-3 space-y-0"
-                                              >
-                                                <FormControl>
-                                                  <Checkbox
-                                                    checked={field.value?.includes(group.name)}
-                                                    onCheckedChange={(checked) => {
-                                                      return checked
-                                                        ? field.onChange([...(field.value || []), group.name])
-                                                        : field.onChange(
-                                                            field.value?.filter(
-                                                              (value) => value !== group.name
-                                                            )
-                                                          )
-                                                    }}
-                                                  />
-                                                </FormControl>
-                                                <FormLabel className="font-normal">
-                                                  {group.name}
-                                                </FormLabel>
-                                              </FormItem>
-                                            )
-                                          }}
-                                        />
-                                      ))}
-                                      </div>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-
-
-                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                              <FormField
-                                control={form.control}
-                                name={`statisticalTests.${index}.test`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Statistical Test</FormLabel>
-                                    <Select
-                                      onValueChange={field.onChange}
-                                      value={field.value}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select a test" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="t-test">T-test (2 groups)</SelectItem>
-                                        <SelectItem value="one-way-anova">One-way ANOVA (2+ groups)</SelectItem>
-                                        <SelectItem value="tukey-kramer">Tukey-Kramer test (post-hoc)</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name={`statisticalTests.${index}.significanceLevel`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Significance Level (p)</FormLabel>
-                                    <Select
-                                      onValueChange={field.onChange}
-                                      value={field.value}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select a p-value" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="0.05">&lt; 0.05</SelectItem>
-                                        <SelectItem value="0.01">&lt; 0.01</SelectItem>
-                                        <SelectItem value="0.001">&lt; 0.001</SelectItem>
-                                        <SelectItem value="0.0001">&lt; 0.0001</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              </div>
-                              <Button type="button" className="w-full" disabled={testResult?.isLoading} onClick={() => onRunTest(index, currentTest)}>
-                                {testResult?.isLoading ? (
-                                  <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Calculating...
-                                  </>
-                                ) : (
-                                  <>
-                                  <Sparkles className="mr-2 h-5 w-5" />
-                                  Run Test #{index + 1}
-                                  </>
-                                )}
-                              </Button>
-                              {testResult?.result && (
-                                  <div className="space-y-2 rounded-lg border bg-muted/50 p-4">
-                                      <h4 className="font-headline text-md font-semibold">Test Result</h4>
-                                      {testResult.result.pValue !== undefined && (
-                                        <>
-                                          <p className="text-sm">
-                                              Calculated p-value: <span className="font-mono font-bold text-primary">{testResult.result.pValue.toExponential(4)}</span>
-                                              {testResult.result.fValue && ` (F-value: ${testResult.result.fValue.toFixed(4)})`}
-                                          </p>
-                                          <p className={cn("text-sm font-medium", testResult.result.pValue < parseFloat(currentTest.significanceLevel) ? "text-green-500" : "text-amber-500")}>
-                                              {testResult.result.pValue < parseFloat(currentTest.significanceLevel)
-                                              ? "The difference is statistically significant."
-                                              : "The difference is not statistically significant."}
-                                          </p>
-                                        </>
-                                      )}
-                                      {testResult.result.tukeyResults && (
-                                        <div className="space-y-3">
-                                          <p className="text-sm">HSD (Honestly Significant Difference) is pair-specific for this test.</p>
-                                          <Table>
-                                            <TableHeader>
-                                              <TableRow>
-                                                <TableHead>Comparison</TableHead>
-                                                <TableHead className="text-right">Mean Diff.</TableHead>
-                                                <TableHead className="text-right">Significant?</TableHead>
-                                              </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                              {testResult.result.tukeyResults.results.map(res => (
-                                                <TableRow key={`${res.group1}-${res.group2}`}>
-                                                  <TableCell>{res.group1} vs {res.group2}</TableCell>
-                                                  <TableCell className="text-right font-mono">{res.diff.toFixed(4)}</TableCell>
-                                                  <TableCell className={cn("text-right font-semibold", res.significant ? "text-green-500" : "text-amber-500")}>
-                                                    {res.significant ? 'Yes' : 'No'}
-                                                  </TableCell>
-                                                </TableRow>
-                                              ))}
-                                            </TableBody>
-                                          </Table>
-                                        </div>
-                                      )}
-                                  </div>
-                              )}
-                            </AccordionContent>
-                          </AccordionItem>
-                         )
-                        })}
-                      </Accordion>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          appendStatTest({
-                            selectedGroups: [],
-                            test: 't-test',
-                            significanceLevel: '0.05',
-                          })
-                        }
-                        className="w-full"
-                      >
-                        <Plus className="mr-2 h-4 w-4" /> Add Test
-                      </Button>
-                  </CardContent>
-                </Card>
               </div>
 
               <div className="space-y-8">
@@ -1053,7 +705,7 @@ export default function Home() {
                   </div>
                   <div>
                     <CardTitle className="font-headline text-xl">
-                      4. TraceBack Analysis Results
+                      3. TraceBack Analysis Results
                     </CardTitle>
                     <CardDescription>
                       Review the calculated standard curve and traced-back absorbance values.
@@ -1119,7 +771,7 @@ export default function Home() {
                       </div>
                       <div>
                         <CardTitle className="font-headline text-xl">
-                          5. Forward Test Results (Validation)
+                          4. Forward Test Results (Validation)
                         </CardTitle>
                         <CardDescription>
                           Concentrations recalculated from absorbance values to verify the model.
