@@ -260,7 +260,8 @@ export default function Home() {
         groupName: group.groupName,
         sampleData: group.absorbanceValues.map((abs, i) => ({
             sample: i + 1,
-            absorbance: abs,
+            rawAbsorbance: abs,
+            trueAbsorbance: abs - blankAbsorbance,
             concentration: calculatedConcentrations[i],
         })),
         concentrationMean,
@@ -323,7 +324,7 @@ export default function Home() {
             csvData.push([
                 group.groupName,
                 sample.sample,
-                sample.absorbance.toFixed(4),
+                sample.rawAbsorbance.toFixed(4),
                 sample.concentration.toFixed(4)
             ]);
         });
@@ -582,25 +583,7 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                          control={form.control}
-                          name="blankAbsorbance"
-                          render={({ field }) => (
-                              <FormItem>
-                              <FormLabel>Blank Absorbance</FormLabel>
-                              <FormControl>
-                                  <Input
-                                  type="number"
-                                  step="any"
-                                  placeholder="e.g., 0.05"
-                                  {...field}
-                                  />
-                              </FormControl>
-                              <FormMessage />
-                              </FormItem>
-                          )}
-                      />
+                    <div className="grid grid-cols-1 gap-4">
                       <FormItem>
                           <FormLabel>Target R² (for Auto-fill)</FormLabel>
                           <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background px-3">
@@ -774,6 +757,24 @@ export default function Home() {
                                 )}
                             />
                         </div>
+                        <FormField
+                            control={form.control}
+                            name="blankAbsorbance"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel>Blank Absorbance</FormLabel>
+                                <FormControl>
+                                    <Input
+                                    type="number"
+                                    step="any"
+                                    placeholder="e.g., 0.05"
+                                    {...field}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                                </FormItem>
+                            )}
+                        />
                     </div>
                   </CardContent>
                 </Card>
@@ -922,6 +923,7 @@ export default function Home() {
                                         <TableRow>
                                             <TableHead className="text-center">Sample</TableHead>
                                             <TableHead className="text-center">Raw Absorbance</TableHead>
+                                            <TableHead className="text-center">True Absorbance</TableHead>
                                             <TableHead className="text-center">Recalculated Conc.</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -929,7 +931,9 @@ export default function Home() {
                                         {group.sampleData.map(sample => (
                                             <TableRow key={sample.sample}>
                                                 <TableCell className="text-center font-medium">{sample.sample}</TableCell>
-                                                <TableCell className="text-center font-mono">{sample.absorbance.toFixed(4)}</TableCell>
+-                                                <TableCell className="text-center font-mono">{sample.absorbance.toFixed(4)}</TableCell>
++                                                <TableCell className="text-center font-mono">{sample.rawAbsorbance.toFixed(4)}</TableCell>
++                                                <TableCell className="text-center font-mono text-muted-foreground">{sample.trueAbsorbance.toFixed(4)}</TableCell>
                                                 <TableCell className="text-center font-mono text-primary">{sample.concentration.toFixed(4)}</TableCell>
                                             </TableRow>
                                         ))}
@@ -948,5 +952,6 @@ export default function Home() {
     </div>
   );
 }
+
 
     
